@@ -263,7 +263,8 @@ export class StoreDataDeletionRepository {
       // Cascades: verification_message_dispatches (-> sender attempts),
       // verification_service_messages, verification_reply_events,
       // verification_auto_cancellations (+ events), verification_change_requests
-      // (+ events, effects) and customer_messages linked to the verification.
+      // (+ events, effects), verification_shipping_notifications and
+      // customer_messages linked to the verification.
       const verifications = await count(
         tx,
         sql`DELETE FROM verifications WHERE id IN (${storeVerifications}) RETURNING 1`,

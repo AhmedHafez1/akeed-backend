@@ -35,7 +35,27 @@ import {
   LEGACY_CONFIRMATION_CYCLE,
 } from '../../shared/verification/change-request.policy';
 
+import { ConfigService } from '@nestjs/config';
+import type { ServiceMessageKind } from '../../shared/messaging/message-texts.types';
+import { ShippingNotificationsRepository } from '../../infrastructure/database/repositories/shipping-notifications.repository';
+import { readShippingNotificationsConfig } from '../../shared/config/shipping-notifications.config';
+import { evaluateShippingEligibility } from '../shipping-notifications/shipping-eligibility.policy';
+import {
+  shippingFailureForOutcome,
+  type ShippingSendResult,
+} from '../../shared/shipping/shipping-send-outcome';
+
 const TERMINAL_OR_FINAL_STATUSES = AUTOMATION_FINAL_STATUSES;
+
+/** The service message each reply follow-up job sends. */
+const REPLY_FOLLOW_UP_KINDS: Partial<
+  Record<VerificationAutomationJobType, ServiceMessageKind>
+> = {
+  [VerificationAutomationJobType.ACKNOWLEDGMENT]: 'acknowledgment',
+  [VerificationAutomationJobType.SHIPPING_ACKNOWLEDGMENT]:
+    'shipping_acknowledgment',
+  [VerificationAutomationJobType.UNRESOLVED_REPLY_NUDGE]: 'nudge',
+};
 
 @Processor(VERIFICATION_AUTOMATION_QUEUE_NAME, { concurrency: 5 })
 @Injectable()
@@ -61,6 +81,9 @@ export class VerificationAutomationProcessor extends WorkerHost {
     @Optional()
     private readonly reconfirmations?: ChangeRequestReconfirmationService,
     @Optional() private readonly changeEffects?: ChangeRequestEffectsService,
+    @Optional()
+    private readonly shippingNotifications?: ShippingNotificationsRepository,
+    @Optional() private readonly config?: ConfigService,
   ) {
     super();
   }
@@ -121,6 +144,16 @@ export class VerificationAutomationProcessor extends WorkerHost {
           data.orgId,
           data.dispatchId,
         );
+        if (outcome.recoveryKind === 'shipping_shipped') {
+          // A shipping retry or fallback never schedules confirmation work.
+          await this.recordShippingOutcome(data, outcome);
+          if (outcome.status === 'sent')
+            await this.verificationSendService.acknowledgeRecoveryAutomation(
+              data.orgId,
+              data.dispatchId,
+            );
+          return;
+        }
         await this.reconfirmations?.afterSenderRecovery(
           data.orgId,
           data.verificationId,
@@ -157,8 +190,12 @@ export class VerificationAutomationProcessor extends WorkerHost {
         await this.handleEscalateNoReply(job, token);
         return;
       case VerificationAutomationJobType.ACKNOWLEDGMENT:
+      case VerificationAutomationJobType.SHIPPING_ACKNOWLEDGMENT:
       case VerificationAutomationJobType.UNRESOLVED_REPLY_NUDGE:
         await this.handleReplyFollowUp(job);
+        return;
+      case VerificationAutomationJobType.SHIPPING_SEND:
+        await this.handleShippingSend(job, token);
         return;
       default:
         this.logger.warn(
@@ -531,10 +568,8 @@ export class VerificationAutomationProcessor extends WorkerHost {
     try {
       await this.replyFollowUps.handle({
         kind:
-          (job.name as VerificationAutomationJobType) ===
-          VerificationAutomationJobType.ACKNOWLEDGMENT
-            ? 'acknowledgment'
-            : 'nudge',
+          REPLY_FOLLOW_UP_KINDS[job.name as VerificationAutomationJobType] ??
+          'nudge',
         verificationId: data.verificationId,
         orgId: data.orgId,
         repliedAt: data.reply.repliedAt,
@@ -747,6 +782,108 @@ export class VerificationAutomationProcessor extends WorkerHost {
     }
 
     return { verification, order, integration };
+  }
+
+  /**
+   * Sends the order's one Shipped message. The record and the order are read
+   * again first: a message held over quiet hours goes out only if the order
+   * is still eligible when they end. A refusal fails the record and is never
+   * retried.
+   */
+  private async handleShippingSend(
+    job: Job<VerificationAutomationJobPayload>,
+    token?: string,
+  ): Promise<void> {
+    const { data } = job;
+    if (!data.shippingNotificationId || !this.shippingNotifications) return;
+    if (!this.config || !readShippingNotificationsConfig(this.config).enabled)
+      return this.skipShipping(data, 'feature_disabled');
+    const context = await this.shippingNotifications.findSendContext({
+      orgId: data.orgId,
+      shippingNotificationId: data.shippingNotificationId,
+    });
+    if (
+      !context ||
+      context.notification.verificationId !== data.verificationId ||
+      context.notification.status !== 'pending'
+    )
+      return this.skipShipping(data, 'not_pending');
+    if (!context.shippingNotificationsEnabled)
+      return this.skipShipping(data, 'store_disabled');
+    const eligibility = evaluateShippingEligibility({
+      isTest: context.orderIsTest,
+      verificationStatus: context.verificationStatus,
+      verificationCanceledAt: context.verificationCanceledAt,
+      merchantCanceledAt: context.merchantCanceledAt,
+      sourceCancelledAt: null,
+      sourceCreatedAt: null,
+      orderCreatedAt: context.orderCreatedAt,
+      now: new Date(),
+    });
+    if (!eligibility.write) return this.skipShipping(data, 'test_order');
+    if (eligibility.status === 'failed') {
+      await this.shippingNotifications.markFailed({
+        orgId: data.orgId,
+        shippingNotificationId: data.shippingNotificationId,
+        reason: eligibility.reason,
+        at: new Date().toISOString(),
+      });
+      return;
+    }
+    const ctx = await this.loadContext(data.verificationId, data.orgId);
+    if (!ctx) return;
+    await this.delayIfQuietHours(job, ctx.integration, token);
+    const outcome = await this.verificationSendService.sendShipped(
+      data.verificationId,
+    );
+    await this.recordShippingOutcome(data, outcome);
+  }
+
+  private async recordShippingOutcome(
+    data: VerificationAutomationJobPayload,
+    outcome: ShippingSendResult,
+  ): Promise<void> {
+    const reason = shippingFailureForOutcome(outcome);
+    this.logger.log(
+      buildBackendLog(VerificationAutomationProcessor.name, {
+        action: 'shipping-send',
+        outcome: reason ? 'failure' : 'success',
+        verificationId: data.verificationId,
+        orgId: data.orgId,
+        sendStatus: outcome.status,
+        reason: reason ?? outcome.reason,
+      }),
+    );
+    if (!reason || !this.shippingNotifications) return;
+    const record = data.shippingNotificationId
+      ? { id: data.shippingNotificationId }
+      : await this.shippingNotifications.findByVerification({
+          orgId: data.orgId,
+          verificationId: data.verificationId,
+          stage: 'shipped',
+        });
+    if (!record) return;
+    await this.shippingNotifications.markFailed({
+      orgId: data.orgId,
+      shippingNotificationId: record.id,
+      reason,
+      at: new Date().toISOString(),
+    });
+  }
+
+  private skipShipping(
+    data: VerificationAutomationJobPayload,
+    reason: string,
+  ): void {
+    this.logger.log(
+      buildBackendLog(VerificationAutomationProcessor.name, {
+        action: 'shipping-send',
+        outcome: 'skipped',
+        verificationId: data.verificationId,
+        orgId: data.orgId,
+        reason,
+      }),
+    );
   }
 
   private isStatusTerminal(status: string | null | undefined): boolean {

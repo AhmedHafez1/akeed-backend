@@ -18,6 +18,10 @@
  *   6. CHANGE_REQUEST_RECONFIRMATION — the merchant's updated confirmation for
  *                            an open change request, built from the order's
  *                            current details; held until quiet hours end.
+ *   7. SHIPPING_SEND       — the Shipped message for a pending shipping
+ *                            notification, held until quiet hours end.
+ *   8. SHIPPING_ACKNOWLEDGMENT — the thank-you after a tap on the Shipped
+ *                            message. Attempted once, never retried.
  */
 
 export const VERIFICATION_AUTOMATION_QUEUE_NAME = 'verification-automation';
@@ -34,6 +38,8 @@ export enum VerificationAutomationJobType {
   ACKNOWLEDGMENT = 'verification.acknowledgment',
   UNRESOLVED_REPLY_NUDGE = 'verification.unresolved_reply_nudge',
   CHANGE_REQUEST_RECONFIRMATION = 'verification.change_request_reconfirmation',
+  SHIPPING_SEND = 'verification.shipping_send',
+  SHIPPING_ACKNOWLEDGMENT = 'verification.shipping_acknowledgment',
 }
 
 import type { MerchantReplySender } from '../../shared/messaging/merchant-reply-sender';
@@ -41,6 +47,8 @@ import type { MerchantReplySender } from '../../shared/messaging/merchant-reply-
 export interface VerificationAutomationJobPayload {
   changeRequestId?: string;
   dispatchId?: string;
+  /** A shipping send: the shipping notification it is for. */
+  shippingNotificationId?: string;
   verificationId: string;
   orgId: string;
   scheduledAt: string;

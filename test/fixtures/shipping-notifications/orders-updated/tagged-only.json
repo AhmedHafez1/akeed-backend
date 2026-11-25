@@ -1,0 +1,17 @@
+{
+  "_fixture": {
+    "topic": "orders/updated",
+    "source": "Shopify 2026-01 order shape, projected to the fields shipping reads; synthetic, not captured",
+    "describes": "Not fulfilled; the merchant added a mapped Arabic tag with surrounding spaces"
+  },
+  "payload": {
+    "id": "{{orderId}}",
+    "created_at": "{{createdAt}}",
+    "updated_at": "{{updatedAt}}",
+    "cancelled_at": "{{cancelledAt}}",
+    "test": false,
+    "tags": "Akeed: Verified,  تم الشحن ",
+    "fulfillment_status": null,
+    "fulfillments": []
+  }
+}

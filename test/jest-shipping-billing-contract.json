@@ -1,0 +1,10 @@
+{
+  "rootDir": "..",
+  "testRegex": "test/shipping-billing\\.contract-spec\\.ts$",
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "transform": {
+    "^.+\\.ts$": "ts-jest"
+  },
+  "testEnvironment": "node",
+  "testTimeout": 45000
+}

@@ -4,6 +4,7 @@ import { BILLING_PLAN_IDS } from '../../../shared/billing/billing-plan';
 import type { BillingManagement } from '../../../shared/billing/entitlement';
 import type { SourceSetupDto } from '../../../shared/commerce/source-setup';
 import {
+  IsArray,
   IsBoolean,
   IsIn,
   IsNotEmpty,
@@ -116,6 +117,21 @@ export class UpdateOnboardingSettingsDto {
   @IsOptional()
   @IsBoolean()
   changeRequestsEnabled?: boolean;
+
+  /** Shipping notifications. Refused while SHIPPING_NOTIFICATIONS_ENABLED is off. */
+  @IsOptional()
+  @IsBoolean()
+  shippingNotificationsEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  shippingFulfillmentTriggerEnabled?: boolean;
+
+  /** Checked and tidied by the service, which returns a coded error. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  shippingTags?: string[];
 
   @IsOptional()
   @IsString()
@@ -370,6 +386,12 @@ export interface OnboardingStateDto {
   assumeCodWhenPaymentMissing: boolean;
   acknowledgmentEnabled: boolean;
   changeRequestsEnabled?: boolean;
+  /** Present only while SHIPPING_NOTIFICATIONS_ENABLED is on and the store's platform has shipping notifications. */
+  shippingNotificationsEnabled?: boolean;
+  /** Present only with `shippingNotificationsEnabled`. */
+  shippingFulfillmentTriggerEnabled?: boolean;
+  /** Present only with `shippingNotificationsEnabled`. */
+  shippingTags?: string[];
   changeRequestReadiness?: import('../../change-requests/change-request-templates.service').ChangeRequestReadiness;
   shippingCurrency: OnboardingShippingCurrency;
   /**
@@ -468,6 +490,17 @@ export interface SettingsResponseDto {
       TemplateLanguage,
       Record<string, { confirmed: string | null; canceled: string | null }>
     >;
+  };
+  /**
+   * The Shipped message for the Settings preview. Present only while the
+   * state carries the shipping fields (the switch is on and the store's
+   * platform has a shipping source).
+   */
+  shipping?: {
+    /** The default Shipped message per language, approved or not; null when none. */
+    messages: Record<TemplateLanguage, TemplateMessageLines | null>;
+    /** A sample `{{tracking}}` line per language, with a tracking number. */
+    trackingSamples: Record<TemplateLanguage, string>;
   };
   /** The store's logo and banner, and whether the banner is sent. */
   branding: MerchantBrandingDto;

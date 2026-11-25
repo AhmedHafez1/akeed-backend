@@ -8,7 +8,7 @@ This document explains the Akeed cash-on-delivery order confirmation feature fro
 
 The feature verifies COD orders through WhatsApp before the merchant fulfills the order. Orders enter from three channels: the Shopify `orders-create` webhook, a manual order created in the Standalone dashboard (see `MANUAL_ORDER_CREATION.md`), and a CSV/XLSX bulk import (see `BULK_ORDER_IMPORT.md`). Every channel produces the same normalized order and follows the same lifecycle below. Customers can confirm or cancel from a WhatsApp template. If they do not reply, Akeed can escalate the order to `no_reply`. For Shopify orders it also tags the Shopify order, and the merchant can cancel the order from the Akeed dashboard.
 
-Merchants can now choose branded confirmation template variants per language. Messages go out in Arabic, English, Urdu, Spanish and French; Turkish is in the language list too, with drafts awaiting Meta approval, so it sends nothing until staff launch it. The selected variants are used for both preview and actual sends.
+Merchants can now choose branded confirmation template variants per language. Messages go out in Arabic, English, Urdu, Spanish, French and Turkish. The selected variants are used for both preview and actual sends.
 
 ## Scope
 
@@ -91,7 +91,7 @@ A run reads candidates 50 at a time past a cursor (creation time, then id), up t
 
 The dashboard overview returns `capacity`: `blocked_count`, `mode` (`plan` or `credits`), `remaining`, `action` (`upgrade`, `recharge` or `wait_reset`) and `reset_at`. The dashboard shows a banner while `blocked_count` is above zero. Alert emails are described in [ONBOARDING_AND_BILLING.md](ONBOARDING_AND_BILLING.md#usage-alerts).
 
-**Limitation:** Akeed does not observe cancellations or fulfilments made in the store. An order cancelled there while it was blocked is still sent when capacity returns, unless it is past the age limit. That is why the limit is short.
+**Limitation:** blocked-order recovery does not observe cancellations or fulfilments made in the store. An order cancelled there while it was blocked is still sent when capacity returns, unless it is past the age limit. That is why the limit is short. Only shipping notifications read store fulfilments, through Shopify `orders/updated` ([INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#order-update-webhook-shipping-notifications)).
 
 ### Automatic cancellation of unanswered orders
 
@@ -448,6 +448,20 @@ suite pins.
   Meta returned at the last sync; otherwise from the stored preview. The
   response still carries the four-block `preview`/`previews` keys; the
   frontend reads only the neutral message.
+
+### Shipping notifications
+
+One informational **Shipped** message per order, for Shopify stores that switched shipping notifications on (`SHIPPING_NOTIFICATIONS_ENABLED` and the store's own switch).
+
+- **Trigger.** A Shopify `orders/updated` event with a fulfillment, or with a newly present tag from the store's list, records one `verification_shipping_notifications` row per order ([INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md](INTEGRATIONS_WEBHOOKS_AND_AUTOMATION.md#order-update-webhook-shipping-notifications)). A pending row queues `verification.shipping_send`.
+- **Eligibility.** COD orders Akeed received, confirmed, unanswered or manual. Test orders write nothing. A cancelled order or one older than 30 days is recorded `failed` (`order_cancelled`, `order_too_old`). The send job reads the row, the order and the store's switch again before sending, so a message held over quiet hours goes out once they end only if the order is still eligible.
+- **Sending.** The job applies quiet hours and calls the shared send path with dispatch kind `shipping_shipped`: sender resolution, own-number attempts with the 15-second deadline, the two delayed retries, the Akeed fallback and receipts all run as for a reminder. The template is the language's approved `shipping_shipped` default, in the language the store's confirmations use; if that language has none approved, the phone's base language (Arabic for an Arabic country code, otherwise English), then the other of the two. With none approved the row fails with `template_unavailable`. The body carries the store name, the order number and a tracking line (the tracking number and link when Shopify sent them, otherwise a fixed sentence). No logo header and no change-request buttons.
+- **Never the confirmation's status.** A shipping message never changes the verification's status, attempts, message id or reminders. Its acceptance and receipts move the shipping row forward only: `sent`, `delivered`, `read`. A refused or undeliverable send makes it `failed` with `send_failed` or `not_on_whatsapp`; a missing phone with `no_phone`.
+- **Allowance.** The claim charges the same pools as a confirmation, with nothing held back (see [Shipping messages](ONBOARDING_AND_BILLING.md#shipping-messages)). When every pool that could pay is empty, the send makes no provider call, takes no charge and is never retried: the row is `failed` with `no_allowance`. It never becomes a blocked order and capacity recovery never sends it.
+- **Buttons.** The quick replies carry `sh1|<home|reschedule|address>|<verificationId>`. A tap counts only when it quotes that very Shipped message, from the customer it went to, through the sender that sent it, and to the store that sent it; anything else is ignored. Only the first tap is kept on the row (`customer_reply`); every message stays in the customer-message history. A tap never answers the confirmation.
+- **Needs action.** `reschedule` and `address` give the order the reason `delivery_request`; a row failed with `no_phone` or `not_on_whatsapp` gives `shipping_not_reachable`. Both clear when the merchant marks them done with `POST /api/verifications/:id/shipping/resolve` (owners and admins; `SHIPPING_NOTIFICATION_NOT_FOUND` 404, `SHIPPING_NOTHING_TO_RESOLVE` 409, viewers `VERIFICATION_ROLE_REQUIRED` 403). `home` is recorded only.
+- **Thank-you.** A recorded tap queues one `verification.shipping_acknowledgment` under the acknowledgment rules: the store's thank-you preference, on Akeed's number with the acknowledgment switch (billed like a confirmation thank-you), on the merchant's number when it received the tap. It is the staff-managed text `ack_shipping`, once per order, separate from the confirmation thank-you.
+- **API.** Confirmation list rows and needs-action items carry `shipping`: `status`, `reason_code`, `trigger`, `matched_tag`, `tracking_number`, `tracking_url`, `customer_reply`, `customer_replied_at`, `delivery_request`, `resolved_at` and `updated_at`, or null when no Shipped message was due.
 
 ## Merchant Controls
 

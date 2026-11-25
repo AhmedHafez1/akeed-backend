@@ -1,0 +1,17 @@
+{
+  "_fixture": {
+    "topic": "orders/updated",
+    "source": "Shopify 2026-01 order shape, projected to the fields shipping reads; synthetic, not captured",
+    "describes": "Fulfilled, then cancelled in Shopify"
+  },
+  "payload": {
+    "id": "{{orderId}}",
+    "created_at": "{{createdAt}}",
+    "updated_at": "{{updatedAt}}",
+    "cancelled_at": "{{cancelledAt}}",
+    "test": false,
+    "tags": "Akeed: Verified",
+    "fulfillment_status": "fulfilled",
+    "fulfillments": [{ "status": "success", "tracking_number": "CANCEL-1" }]
+  }
+}

@@ -677,7 +677,7 @@ describe('AdminTemplateDraftService', () => {
       operations: { enabled: true, operator: true },
       environment: { production: false, account_suffix: '0001' },
       options: {
-        purposes: ['cod_confirmation', 'cod_reminder'],
+        purposes: ['cod_confirmation', 'cod_reminder', 'shipping_shipped'],
         variables: [
           'customer',
           'store',
@@ -686,6 +686,7 @@ describe('AdminTemplateDraftService', () => {
           'items',
           'region',
           'address',
+          'tracking',
         ],
         limits: { body: 1024, button_label: 25, style: 24 },
         review_max_hours: 24,

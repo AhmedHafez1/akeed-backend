@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { VerificationsController } from './verifications.controller';
 import { ChangeRequestsController } from './change-requests.controller';
+import { ShippingNeedsActionController } from './shipping-needs-action.controller';
 import { ChangeRequestMerchantService } from './change-request-merchant.service';
 import { VerificationsService } from './verifications.service';
 import { TestVerificationService } from './test-verification.service';
@@ -16,6 +17,7 @@ import { AutoCancellationModule } from '../auto-cancellation/auto-cancellation.m
   controllers: [
     VerificationsController,
     ChangeRequestsController,
+    ShippingNeedsActionController,
     OnboardingTestController,
   ],
   providers: [

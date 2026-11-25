@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  Allow,
   IsArray,
   IsBoolean,
   IsNotEmpty,
@@ -163,6 +164,40 @@ export class ShopifyOrderWebhookDto {
   @IsOptional()
   @IsBoolean()
   test?: boolean;
+}
+
+/**
+ * An `orders/updated` delivery. Only the order id is required, so an odd
+ * payload is still acknowledged; the other fields are kept as sent and read
+ * defensively by the shipping event source. Fields not declared here are
+ * stripped by the global validation pipe.
+ */
+export class ShopifyOrderUpdatedWebhookDto {
+  @Transform(({ value }) => String(value))
+  @IsString()
+  @IsNotEmpty()
+  id!: string;
+
+  @Allow()
+  created_at?: unknown;
+
+  @Allow()
+  updated_at?: unknown;
+
+  @Allow()
+  cancelled_at?: unknown;
+
+  @Allow()
+  test?: unknown;
+
+  @Allow()
+  tags?: unknown;
+
+  @Allow()
+  fulfillment_status?: unknown;
+
+  @Allow()
+  fulfillments?: unknown;
 }
 
 export class ShopifyAppUninstalledDto {

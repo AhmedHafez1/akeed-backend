@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   verificationReplyEvents,
@@ -83,7 +83,10 @@ export class VerificationServiceMessagesRepository {
           eq(verificationServiceMessages.id, params.serviceMessageId),
           eq(verificationServiceMessages.orgId, params.orgId),
           eq(verificationServiceMessages.verificationId, params.verificationId),
-          eq(verificationServiceMessages.kind, 'acknowledgment'),
+          inArray(verificationServiceMessages.kind, [
+            'acknowledgment',
+            'shipping_acknowledgment',
+          ]),
           eq(verificationServiceMessages.state, 'claimed'),
           eq(verificationServiceMessages.senderKind, 'merchant_own'),
           eq(
@@ -163,7 +166,10 @@ export class VerificationServiceMessagesRepository {
           eq(verificationServiceMessages.orgId, params.orgId),
           eq(verificationServiceMessages.verificationId, params.verificationId),
           eq(verificationServiceMessages.dispatchId, params.dispatchId),
-          eq(verificationServiceMessages.kind, 'acknowledgment'),
+          inArray(verificationServiceMessages.kind, [
+            'acknowledgment',
+            'shipping_acknowledgment',
+          ]),
           eq(verificationServiceMessages.state, 'claimed'),
           eq(integrations.isActive, true),
         ),

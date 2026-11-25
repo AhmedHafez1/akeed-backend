@@ -1,0 +1,17 @@
+{
+  "_fixture": {
+    "topic": "orders/updated",
+    "source": "Shopify 2026-01 order shape, projected to the fields shipping reads; synthetic, not captured",
+    "describes": "The update Shopify sends back after Akeed writes its own tags"
+  },
+  "payload": {
+    "id": "{{orderId}}",
+    "created_at": "{{createdAt}}",
+    "updated_at": "{{updatedAt}}",
+    "cancelled_at": "{{cancelledAt}}",
+    "test": false,
+    "tags": "Akeed: Verified, AKEED: Confirmed ,akeed:shipped",
+    "fulfillment_status": null,
+    "fulfillments": []
+  }
+}

@@ -30,6 +30,9 @@ import {
   VerificationListItemDto,
   VerificationStatsDto,
 } from '../orders/dto/dashboard.dto';
+import { ShippingNotificationsRepository } from '../../infrastructure/database/repositories/shipping-notifications.repository';
+import { ShippingNotificationsService } from '../shipping-notifications/shipping-notifications.service';
+import { toShippingSummary } from '../../shared/shipping/shipping-summary';
 import { VerificationStatus } from '../../shared/interfaces/verification.interface';
 import {
   canRetryVerification,
@@ -112,6 +115,7 @@ import type {
   GetVerificationOverviewQueryDto,
   NeedsActionItemDto,
   ChangeRequestSummaryDto,
+  ShippingSummaryDto,
   VerificationOverviewDto,
   CapacitySummaryDto,
 } from '../orders/dto/dashboard.dto';
@@ -326,6 +330,10 @@ export class VerificationsService {
     private readonly autoCancellations?: VerificationAutoCancellationsRepository,
     @Optional()
     private readonly changeRequests?: VerificationChangeRequestsRepository,
+    @Optional()
+    private readonly shippingNotifications?: ShippingNotificationsRepository,
+    @Optional()
+    private readonly shipping?: ShippingNotificationsService,
   ) {}
 
   async listByOrg(
@@ -472,13 +480,14 @@ export class VerificationsService {
       .filter((item) => !isHeldRow(item))
       .map((item) => item.id);
     const enrichStartedAt = Date.now();
-    const [syncRows, historyOf, autoCancelRows, changeRequestOf] =
+    const [syncRows, historyOf, autoCancelRows, changeRequestOf, shippingOf] =
       await Promise.all([
         this.outcomeSyncs?.findByCorrelationIds(orgId, verificationIds) ?? [],
         this.loadCustomerHistory(orgId, items),
         this.autoCancellations?.findByVerificationIds(orgId, verificationIds) ??
           [],
         this.loadChangeRequests(orgId, verificationIds),
+        this.loadShipping(orgId, verificationIds),
       ]);
     timings.enrichMs = Date.now() - enrichStartedAt;
     const autoCancelOf = (verificationId: string) =>
@@ -594,6 +603,9 @@ export class VerificationsService {
           change_request: isHeldRow(verification)
             ? null
             : changeRequestOf(verification.id),
+          shipping: isHeldRow(verification)
+            ? null
+            : shippingOf(verification.id),
         }))
         .map((item) => this.withAutoCancelCapability(item)),
       next_cursor: nextCursor,
@@ -681,9 +693,13 @@ export class VerificationsService {
     ]);
     timings.pageMs = Date.now() - pageStartedAt;
     const enrichStartedAt = Date.now();
-    const [historyOf, changeRequestOf] = await Promise.all([
+    const [historyOf, changeRequestOf, shippingOf] = await Promise.all([
       this.loadCustomerHistory(orgId, topRows),
       this.loadChangeRequests(
+        orgId,
+        topRows.map((row) => row.id),
+      ),
+      this.loadShipping(
         orgId,
         topRows.map((row) => row.id),
       ),
@@ -743,6 +759,7 @@ export class VerificationsService {
             now,
             changeRequestOf(row.id),
           ),
+          shipping: shippingOf(row.id),
           customer_history: historyOf(row),
         })),
       },
@@ -874,6 +891,13 @@ export class VerificationsService {
         source?.quietHoursEnabled ?? DEFAULT_QUIET_HOURS_ENABLED,
       quiet_hours_start: source?.quietHoursStart ?? null,
       quiet_hours_end: source?.quietHoursEnd ?? null,
+      // Only where the feature exists: the env switch and a shipping source.
+      ...(source && this.shipping?.isAvailableFor(source.platformType)
+        ? {
+            shipping_notifications_enabled:
+              source.shippingNotificationsEnabled === true,
+          }
+        : {}),
     };
   }
 
@@ -976,6 +1000,22 @@ export class VerificationsService {
    * The open change requests of a page of rows, as a lookup. Without the
    * repository (a narrow test module) every row reads as having none.
    */
+  /** The page's Shipped records, one query. */
+  private async loadShipping(
+    orgId: string,
+    verificationIds: string[],
+  ): Promise<(verificationId: string) => ShippingSummaryDto | null> {
+    const rows =
+      (await this.shippingNotifications?.findForVerifications(
+        orgId,
+        verificationIds,
+      )) ?? [];
+    return (verificationId) => {
+      const row = rows.find((entry) => entry.verificationId === verificationId);
+      return row ? toShippingSummary(row) : null;
+    };
+  }
+
   private async loadChangeRequests(
     orgId: string,
     verificationIds: string[],

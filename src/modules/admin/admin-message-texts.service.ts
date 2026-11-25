@@ -42,6 +42,7 @@ const PURPOSE_VARIABLES: Record<MessageTextPurpose, readonly string[]> = {
   unresolved_reply_nudge: ['order', 'store'],
   fallback_customer_name: [],
   fallback_store_name: [],
+  ack_shipping: ['order', 'store'],
 };
 
 const TOKEN = /{{([^{}]*)}}/g;

@@ -150,4 +150,5 @@ export const TEMPLATE_VARIABLE_KEYS = [
   'items',
   'region',
   'address',
+  'tracking',
 ] as const satisfies readonly TemplateVariableKey[];

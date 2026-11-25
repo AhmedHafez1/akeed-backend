@@ -23,6 +23,7 @@ import {
   desc,
   eq,
   isNotNull,
+  inArray,
   isNull,
   notInArray,
   sql,
@@ -35,6 +36,7 @@ import {
   type ChargeRule,
 } from '../../../shared/billing/own-number-billing.policy';
 import { resolveEntitlement } from '../../../shared/billing/entitlement';
+import type { ShippingNotificationStatus } from '../../../shared/shipping/shipping-notification.types';
 import type { VerificationStatus } from '../../../shared/interfaces/verification.interface';
 import type {
   SentTemplateIdentity,
@@ -64,6 +66,7 @@ import {
   verificationSenderAttempts,
   whatsappConnectionTemplates,
   verificationServiceMessages,
+  verificationShippingNotifications,
   whatsappConnections,
   verifications,
 } from '../schema';
@@ -120,9 +123,32 @@ export type DispatchKind =
   | 'initial'
   | 'follow_up'
   | 'acknowledgment'
-  | 'change_acknowledgment';
+  | 'change_acknowledgment'
+  | 'shipping_shipped'
+  | 'shipping_acknowledgment';
 function isServiceDispatchKind(kind: string): boolean {
-  return kind === 'acknowledgment' || kind === 'change_acknowledgment';
+  return (
+    kind === 'acknowledgment' ||
+    kind === 'change_acknowledgment' ||
+    kind === 'shipping_acknowledgment'
+  );
+}
+
+/**
+ * A shipping message is about the order, not its confirmation: it never
+ * changes the verification's status, attempts or message id. Its outcome is
+ * written onto the shipping record instead.
+ */
+export function isShippingDispatchKind(kind: string): boolean {
+  return kind === 'shipping_shipped';
+}
+
+/** A shipping message claimed for a prepaid source: never sent in v1. */
+export const SHIPPING_PREPAID_UNSUPPORTED = 'shipping_prepaid_unsupported';
+
+/** Kinds whose acknowledgment opt-in is checked at claim time. */
+function isAcknowledgmentKind(kind: string): boolean {
+  return kind === 'acknowledgment' || kind === 'shipping_acknowledgment';
 }
 
 /**
@@ -301,6 +327,88 @@ const MAX_LEASE_RECLAIM_ATTEMPTS = 2;
 type DispatchWriter =
   | DrizzleDB
   | Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
+
+/** What a shipping message's ledger event means for its shipping record. */
+export type ShippingProjection =
+  | { status: 'sent' | 'delivered' | 'read' }
+  | {
+      status: 'failed';
+      reason: 'send_failed' | 'not_on_whatsapp' | 'order_cancelled';
+    };
+
+/** The record statuses each projection may move a record from. */
+const SHIPPING_PROJECTION_FROM: Record<
+  ShippingProjection['status'],
+  readonly ShippingNotificationStatus[]
+> = {
+  // An acceptance or a receipt proves the message went out, so it also lifts
+  // a record failed for an unknown outcome.
+  sent: ['pending', 'failed'],
+  delivered: ['pending', 'sent', 'failed'],
+  read: ['pending', 'sent', 'delivered', 'failed'],
+  failed: ['pending', 'sent'],
+};
+
+/**
+ * Writes a shipping message's outcome onto its shipping record, forward only:
+ * a late `delivered` never walks a `read` record back. The record is found by
+ * its verification (one Shipped record per order), and `dispatchId`, when
+ * known, re-points the record at the message actually sent, so a fallback's
+ * receipts land on it too.
+ */
+export async function projectShippingOutcome(
+  tx: DispatchWriter,
+  dispatch: { orgId: string; verificationId: string; id?: string | null },
+  projection: ShippingProjection,
+  at: string,
+): Promise<number> {
+  const rows = await tx
+    .update(verificationShippingNotifications)
+    .set({
+      status: projection.status,
+      reasonCode: projection.status === 'failed' ? projection.reason : null,
+      ...(dispatch.id ? { dispatchId: dispatch.id } : {}),
+      updatedAt: at,
+    })
+    .where(
+      and(
+        eq(verificationShippingNotifications.orgId, dispatch.orgId),
+        eq(
+          verificationShippingNotifications.verificationId,
+          dispatch.verificationId,
+        ),
+        eq(verificationShippingNotifications.stage, 'shipped'),
+        inArray(
+          verificationShippingNotifications.status,
+          SHIPPING_PROJECTION_FROM[projection.status],
+        ),
+      ),
+    )
+    .returning({ id: verificationShippingNotifications.id });
+  return rows.length;
+}
+
+/** Links a claimed shipping message to its pending record. */
+async function linkShippingDispatch(
+  tx: DispatchWriter,
+  dispatch: { orgId: string; verificationId: string; id: string },
+  at: string,
+): Promise<void> {
+  await tx
+    .update(verificationShippingNotifications)
+    .set({ dispatchId: dispatch.id, updatedAt: at })
+    .where(
+      and(
+        eq(verificationShippingNotifications.orgId, dispatch.orgId),
+        eq(
+          verificationShippingNotifications.verificationId,
+          dispatch.verificationId,
+        ),
+        eq(verificationShippingNotifications.stage, 'shipped'),
+        eq(verificationShippingNotifications.status, 'pending'),
+      ),
+    );
+}
 
 /**
  * Outcome of applying a provider acceptance to the ledger.
@@ -528,7 +636,10 @@ export class VerificationMessageDispatchesRepository {
               ),
             )
             .for('update');
-          if (!verification || this.recoveryClosed(verification.status))
+          if (
+            !verification ||
+            this.recoveryClosed(verification.status, params.kind)
+          )
             return {
               outcome: 'blocked' as const,
               reason: 'verification_closed',
@@ -690,11 +801,13 @@ export class VerificationMessageDispatchesRepository {
             })
             .where(eq(verificationMessageDispatches.id, fresh.id))
             .returning();
+          if (isShippingDispatchKind(params.kind))
+            await linkShippingDispatch(tx, claimed, now);
           return { outcome: 'claimed' as const, dispatch: claimed };
         }
 
         if (
-          params.kind === 'acknowledgment' &&
+          isAcknowledgmentKind(params.kind) &&
           (!source?.isActive ||
             !params.repliedAt ||
             !acknowledgmentOptedIn(
@@ -718,6 +831,13 @@ export class VerificationMessageDispatchesRepository {
             return {
               outcome: 'blocked' as const,
               reason: 'integration_inactive',
+            };
+          // Shipping messages are Shopify-only, and a prepaid source has no
+          // fixed pool to keep a reserve of; refused before anything is held.
+          if (isShippingDispatchKind(params.kind))
+            return {
+              outcome: 'blocked' as const,
+              reason: SHIPPING_PREPAID_UNSUPPORTED,
             };
           return this.claimPrepaid(tx, params);
         }
@@ -971,6 +1091,8 @@ export class VerificationMessageDispatchesRepository {
           })
           .where(eq(verificationMessageDispatches.id, dispatch.id))
           .returning();
+        if (isShippingDispatchKind(params.kind))
+          await linkShippingDispatch(tx, claimed, now);
         return { outcome: 'claimed' as const, dispatch: claimed, usage };
       };
       const result = await work();
@@ -1064,7 +1186,7 @@ export class VerificationMessageDispatchesRepository {
       dispatch.attemptCount > 0
         ? FEATURE_OFF_SENDER
         : (params.sender ??
-          (params.kind === 'acknowledgment'
+          (isAcknowledgmentKind(params.kind)
             ? { ...FEATURE_OFF_SENDER, reason: 'service_message' }
             : FEATURE_OFF_SENDER));
     let phoneNumberId = this.config?.get<string>('WA_PHONE_NUMBER_ID') ?? null;
@@ -1132,7 +1254,13 @@ export class VerificationMessageDispatchesRepository {
     return Boolean(open);
   }
 
-  private recoveryClosed(status: string | null): boolean {
+  /**
+   * Whether an own-number retry or fallback no longer has a message to deliver.
+   * A shipping message is sent after the customer confirmed, so only a
+   * cancelled order closes it.
+   */
+  private recoveryClosed(status: string | null, kind?: string): boolean {
+    if (kind && isShippingDispatchKind(kind)) return status === 'canceled';
     return [
       'confirmed',
       'canceled',
@@ -1154,6 +1282,9 @@ export class VerificationMessageDispatchesRepository {
         and(
           eq(verificationMessageDispatches.verificationId, verificationId),
           eq(verificationMessageDispatches.orgId, orgId),
+          // A shipping message's recovery never holds the confirmation's
+          // reminder or escalation.
+          sql`${verificationMessageDispatches.kind}::text <> 'shipping_shipped'`,
           sql`(${verificationMessageDispatches.senderRecoveryState} IN ('retry', 'fallback') OR ${verificationMessageDispatches.senderAutomationPending})`,
         ),
       )
@@ -1205,7 +1336,10 @@ export class VerificationMessageDispatchesRepository {
           )
           .for('update');
         if (!dispatch || dispatch.senderKind !== 'merchant_own') return null;
-        if (!verification || this.recoveryClosed(verification.status)) {
+        if (
+          !verification ||
+          this.recoveryClosed(verification.status, dispatch.kind)
+        ) {
           if (
             dispatch.senderRecoveryState === 'retry' ||
             dispatch.state === 'sending'
@@ -1220,6 +1354,13 @@ export class VerificationMessageDispatchesRepository {
                 leaseUntil: null,
               })
               .where(eq(verificationMessageDispatches.id, dispatchId));
+            if (isShippingDispatchKind(dispatch.kind))
+              await projectShippingOutcome(
+                tx,
+                dispatch,
+                { status: 'failed', reason: 'order_cancelled' },
+                new Date().toISOString(),
+              );
           }
           return null;
         }
@@ -1310,7 +1451,7 @@ export class VerificationMessageDispatchesRepository {
           eq(verificationSenderAttempts.claimToken, context.claimToken),
           eq(verificationSenderAttempts.state, 'authorized'),
           sql`${verificationSenderAttempts.leaseUntil} > now()`,
-          sql`EXISTS (SELECT 1 FROM verification_message_dispatches d JOIN verifications v ON v.id = d.verification_id AND v.org_id = d.org_id JOIN whatsapp_connections c ON c.id = d.sender_connection_id AND c.org_id = d.org_id WHERE d.id = ${dispatchId} AND d.sender_retry_count = ${verificationSenderAttempts.attemptNumber} AND d.state = 'sending' AND c.signup_generation = ${verificationSenderAttempts.signupGeneration} AND c.state = 'active' AND v.status NOT IN ('confirmed','canceled','expired','no_reply','no_whatsapp','blocked'))`,
+          sql`EXISTS (SELECT 1 FROM verification_message_dispatches d JOIN verifications v ON v.id = d.verification_id AND v.org_id = d.org_id JOIN whatsapp_connections c ON c.id = d.sender_connection_id AND c.org_id = d.org_id WHERE d.id = ${dispatchId} AND d.sender_retry_count = ${verificationSenderAttempts.attemptNumber} AND d.state = 'sending' AND c.signup_generation = ${verificationSenderAttempts.signupGeneration} AND c.state = 'active' AND (CASE WHEN d.kind::text = 'shipping_shipped' THEN v.status IS DISTINCT FROM 'canceled' ELSE v.status NOT IN ('confirmed','canceled','expired','no_reply','no_whatsapp','blocked') END))`,
         ),
       )
       .returning({ id: verificationSenderAttempts.id });
@@ -1342,7 +1483,8 @@ export class VerificationMessageDispatchesRepository {
           eq(verifications.orgId, dispatch.orgId),
         ),
       );
-    const closed = !verification || this.recoveryClosed(verification.status);
+    const closed =
+      !verification || this.recoveryClosed(verification.status, dispatch.kind);
     const action = closed
       ? 'canceled'
       : failure.action === 'retry' && dispatch.senderRetryCount < 2
@@ -1378,7 +1520,28 @@ export class VerificationMessageDispatchesRepository {
         updatedAt: now,
       })
       .where(eq(verificationMessageDispatches.id, dispatch.id));
-    if (action === 'complete' && !closed)
+    if (action === 'canceled' && isShippingDispatchKind(dispatch.kind))
+      await projectShippingOutcome(
+        tx,
+        dispatch,
+        { status: 'failed', reason: 'order_cancelled' },
+        now,
+      );
+    else if (
+      action === 'complete' &&
+      !closed &&
+      isShippingDispatchKind(dispatch.kind)
+    )
+      await projectShippingOutcome(
+        tx,
+        dispatch,
+        {
+          status: 'failed',
+          reason: failure.code === '131026' ? 'not_on_whatsapp' : 'send_failed',
+        },
+        now,
+      );
+    else if (action === 'complete' && !closed)
       await tx
         .update(verifications)
         .set(
@@ -1990,7 +2153,14 @@ export class VerificationMessageDispatchesRepository {
               updatedAt: now,
             })
             .where(eq(verificationMessageDispatches.id, dispatch.id));
-          if (input.status !== 'sent')
+          if (input.status !== 'sent' && isShippingDispatchKind(dispatch.kind))
+            await projectShippingOutcome(
+              tx,
+              dispatch,
+              { status: input.status === 'read' ? 'read' : 'delivered' },
+              now,
+            );
+          else if (input.status !== 'sent')
             await tx
               .update(verifications)
               .set({
@@ -2046,6 +2216,7 @@ export class VerificationMessageDispatchesRepository {
           notInArray(verificationMessageDispatches.kind, [
             'acknowledgment',
             'change_acknowledgment',
+            'shipping_acknowledgment',
           ]),
         ),
       )
@@ -2098,7 +2269,7 @@ export class VerificationMessageDispatchesRepository {
     const rows = await this.db.execute(sql`
       WITH expired AS (
         SELECT id FROM verification_message_dispatches
-        WHERE kind::text IN ('acknowledgment', 'change_acknowledgment') AND state = 'sending' AND lease_until < now()
+        WHERE kind::text IN ('acknowledgment', 'change_acknowledgment', 'shipping_acknowledgment') AND state = 'sending' AND lease_until < now()
         ORDER BY lease_until LIMIT 100 FOR UPDATE SKIP LOCKED
       )
       UPDATE verification_message_dispatches dispatch
@@ -2505,6 +2676,15 @@ export class VerificationMessageDispatchesRepository {
               sameCycle(dispatch),
             ),
           );
+      } else if (isShippingDispatchKind(dispatch.kind)) {
+        // Not known to be sent, and not charged: shown as failed. A receipt
+        // or a staff acceptance that proves it was sent moves it on.
+        await projectShippingOutcome(
+          tx,
+          dispatch,
+          { status: 'failed', reason: 'send_failed' },
+          now,
+        );
       } else if (dispatch.kind === 'follow_up') {
         await tx
           .update(verifications)
@@ -2546,6 +2726,7 @@ export class VerificationMessageDispatchesRepository {
           notInArray(verificationMessageDispatches.kind, [
             'acknowledgment',
             'change_acknowledgment',
+            'shipping_acknowledgment',
           ]),
         ),
       )
@@ -2790,6 +2971,24 @@ export class VerificationMessageDispatchesRepository {
         })
         .where(eq(verificationMessageDispatches.id, dispatch.id));
     }
+    if (isShippingDispatchKind(dispatch.kind)) {
+      await projectShippingOutcome(
+        tx,
+        dispatch,
+        status === 'failed'
+          ? {
+              status: 'failed',
+              reason:
+                classifyDeliveryFailure(failureInfo?.code) === 'no_whatsapp'
+                  ? 'not_on_whatsapp'
+                  : 'send_failed',
+            }
+          : { status },
+        occurredAt,
+      );
+      // The order's own status is the confirmation's, never this message's.
+      return { verificationRows: [] };
+    }
     if (isServiceDispatchKind(dispatch.kind)) {
       if (status === 'failed' && dispatch.kind === 'change_acknowledgment') {
         await tx
@@ -3033,6 +3232,20 @@ export class VerificationMessageDispatchesRepository {
         .where(eq(verificationMessageDispatches.id, id))
         .returning();
       if (isServiceDispatchKind(dispatch.kind)) {
+        if (staffAudit)
+          await this.auditResolution(tx, dispatch, 'not_accepted', staffAudit);
+        return updated;
+      }
+      if (isShippingDispatchKind(dispatch.kind)) {
+        await projectShippingOutcome(
+          tx,
+          dispatch,
+          {
+            status: 'failed',
+            reason: noWhatsapp ? 'not_on_whatsapp' : 'send_failed',
+          },
+          now,
+        );
         if (staffAudit)
           await this.auditResolution(tx, dispatch, 'not_accepted', staffAudit);
         return updated;
@@ -3458,6 +3671,29 @@ export class VerificationMessageDispatchesRepository {
     },
   ): Promise<number> {
     if (isServiceDispatchKind(dispatch.kind)) return 0;
+    if (isShippingDispatchKind(dispatch.kind)) {
+      const orgId =
+        dispatch.orgId ??
+        (
+          await tx
+            .select({ orgId: verifications.orgId })
+            .from(verifications)
+            .where(eq(verifications.id, dispatch.verificationId))
+        )[0]?.orgId;
+      if (!orgId) return 0;
+      await projectShippingOutcome(
+        tx,
+        {
+          orgId,
+          verificationId: dispatch.verificationId,
+          id: dispatch.id ?? null,
+        },
+        { status: 'sent' },
+        params.sentAt,
+      );
+      // The verification exists; its own status is not the shipping message's.
+      return 1;
+    }
     if (dispatch.confirmationCycle !== undefined) {
       const [current] = await tx
         .select({

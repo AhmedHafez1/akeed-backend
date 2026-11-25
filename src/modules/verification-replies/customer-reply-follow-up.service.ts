@@ -10,7 +10,10 @@ import { OrdersRepository } from '../../infrastructure/database/repositories/ord
 import { VerificationMessageDispatchesRepository } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
 import { UsageAlertService } from '../verification-core/usage-alert.service';
 import { withSerializableRetry } from '../../shared/database/serializable-retry';
-import type { DispatchRecord } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
+import type {
+  DispatchKind,
+  DispatchRecord,
+} from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
 import { VerificationServiceMessagesRepository } from '../../infrastructure/database/repositories/verification-service-messages.repository';
 import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
 import { MessageImprovementSwitches } from '../../shared/config/message-improvement-switches';
@@ -67,6 +70,13 @@ export type CustomerReplyFollowUpOutcome =
   | { outcome: 'skipped' | 'failed'; reason: ServiceMessageSkipReason }
   | { outcome: 'ineligible'; reason: IneligibleReason };
 
+/** A thank-you, billed like one, after a confirmation answer or a shipping tap. */
+function isAcknowledgment(
+  kind: ServiceMessageKind,
+): kind is 'acknowledgment' | 'shipping_acknowledgment' {
+  return kind === 'acknowledgment' || kind === 'shipping_acknowledgment';
+}
+
 const TEXT_PURPOSES: Record<'confirmed' | 'canceled', MessageTextPurpose> = {
   confirmed: 'ack_confirmed',
   canceled: 'ack_canceled',
@@ -106,7 +116,7 @@ export class CustomerReplyFollowUpService {
   isEnabled(kind: ServiceMessageKind): boolean {
     const switches =
       this.switches?.current() ?? MESSAGE_IMPROVEMENT_SWITCHES_OFF;
-    return kind === 'acknowledgment'
+    return kind === 'acknowledgment' || kind === 'shipping_acknowledgment'
       ? switches.acknowledgment
       : switches.unresolvedReplyNudge;
   }
@@ -156,7 +166,7 @@ export class CustomerReplyFollowUpService {
     if (!this.isEnabled(request.kind)) return ineligible('switch_off');
     if (merchantSender) {
       if (
-        request.kind !== 'acknowledgment' ||
+        !isAcknowledgment(request.kind) ||
         !this.config ||
         !readWhatsappOwnNumberConfig(this.config).sendingEnabled
       )
@@ -189,7 +199,7 @@ export class CustomerReplyFollowUpService {
     if (order.integration?.isActive !== true)
       return ineligible('integration_inactive');
     if (
-      request.kind === 'acknowledgment' &&
+      isAcknowledgment(request.kind) &&
       !acknowledgmentOptedIn(
         order.integration?.acknowledgmentEnabled,
         order.integration?.acknowledgmentEnabledAt,
@@ -211,6 +221,9 @@ export class CustomerReplyFollowUpService {
           verification.cancellationSource === 'customer');
       if (!intent || !answered) return ineligible('not_customer_answer');
       purpose = TEXT_PURPOSES[intent];
+    } else if (request.kind === 'shipping_acknowledgment') {
+      // The tap itself was checked against the Shipped message it answers.
+      purpose = 'ack_shipping';
     } else {
       if (AUTOMATION_FINAL_STATUSES.includes(verification.status as never)) {
         return ineligible('verification_closed');
@@ -271,7 +284,7 @@ export class CustomerReplyFollowUpService {
     const identity = { purpose, language, style: text.style };
 
     let dispatch: DispatchRecord | undefined;
-    if (request.kind === 'acknowledgment') {
+    if (isAcknowledgment(request.kind)) {
       if (!integration || integration.orgId !== request.orgId)
         return this.notSent(
           claim.id,
@@ -284,7 +297,10 @@ export class CustomerReplyFollowUpService {
           orgId: request.orgId,
           integrationId: integration.id,
           verificationId: verification.id,
-          kind: 'acknowledgment',
+          kind:
+            request.kind === 'shipping_acknowledgment'
+              ? 'shipping_acknowledgment'
+              : 'acknowledgment',
           repliedAt: request.repliedAt,
           templateName: null,
           languageCode: language,
@@ -410,7 +426,9 @@ export class CustomerReplyFollowUpService {
               const accepted = await this.messageDispatches.markAccepted({
                 dispatchId: acceptedDispatch.id,
                 verificationId: verification.id,
-                kind: 'acknowledgment',
+                kind: (request.kind === 'shipping_acknowledgment'
+                  ? 'shipping_acknowledgment'
+                  : 'acknowledgment') satisfies DispatchKind,
                 generation: acceptedDispatch.generation,
                 providerMessageId: result.providerMessageId,
                 sentAt: new Date().toISOString(),

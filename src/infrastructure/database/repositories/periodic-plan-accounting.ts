@@ -11,6 +11,7 @@ import {
   type ChargeRule,
   type SenderKind,
 } from '../../../shared/billing/own-number-billing.policy';
+import { decideShippingCharge } from '../../../shared/billing/shipping-charge.policy';
 import type { DispatchRecord } from './verification-message-dispatches.repository';
 
 type RecordedBilling = Pick<
@@ -54,6 +55,8 @@ export class PeriodicPlanAccounting {
       integrationId: string;
       senderKind?: SenderKind;
       chargeRule?: ChargeRule;
+      /** The dispatch kind; a shipping message keeps the D3 reserve. */
+      kind?: string;
     },
     entitlement: EntitlementSnapshot,
     now: string,
@@ -81,17 +84,33 @@ export class PeriodicPlanAccounting {
     const sender = params.senderKind ?? 'akeed_system';
     const rule = params.chargeRule ?? 'standard';
     const ownLimit = entitlement.ownNumberIncludedLimit;
+    const snapshot = {
+      akeedUsed: usage.consumedCount,
+      akeedLimit: entitlement.includedLimit,
+      ownUsed: usage.ownNumberConsumed,
+      ownLimit,
+    };
+    if (params.kind === 'shipping_shipped') {
+      // Shipping uses the same pools as confirmations, decided under the same
+      // usage-row lock as the charge. A refusal is not a blocked
+      // confirmation, so the blocked count is left alone.
+      const shipping = decideShippingCharge({
+        sender,
+        chargeRule: rule,
+        snapshot,
+      });
+      if (!shipping.allowed)
+        return {
+          allowed: false as const,
+          reason: shipping.reason,
+          consumedCount: usage.consumedCount,
+          includedLimit: entitlement.includedLimit,
+        };
+      return this.charge(tx, usage, shipping, sender, rule, entitlement, now);
+    }
     // A fallback is an Akeed-number send: the rule only changes how usage
     // is reported below.
-    const charge = decidePeriodicCharge({
-      sender,
-      snapshot: {
-        akeedUsed: usage.consumedCount,
-        akeedLimit: entitlement.includedLimit,
-        ownUsed: usage.ownNumberConsumed,
-        ownLimit,
-      },
-    });
+    const charge = decidePeriodicCharge({ sender, snapshot });
     if (!charge.allowed) {
       await tx
         .update(integrationMonthlyUsage)
@@ -108,6 +127,19 @@ export class PeriodicPlanAccounting {
         includedLimit: entitlement.includedLimit,
       };
     }
+    return this.charge(tx, usage, charge, sender, rule, entitlement, now);
+  }
+
+  private async charge(
+    tx: CreditTransaction,
+    usage: typeof integrationMonthlyUsage.$inferSelect,
+    charge: { pool: 'akeed' | 'own_number'; cost: number },
+    sender: SenderKind,
+    rule: ChargeRule,
+    entitlement: EntitlementSnapshot,
+    now: string,
+  ) {
+    const ownLimit = entitlement.ownNumberIncludedLimit;
     const own = charge.pool === 'own_number';
     await tx
       .update(integrationMonthlyUsage)

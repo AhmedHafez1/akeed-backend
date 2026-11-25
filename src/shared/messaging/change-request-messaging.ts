@@ -65,6 +65,8 @@ export function resolveCustomerActionPayload(payload: string): {
   verificationId: string;
   cycle?: number;
 } | null {
+  // A Shipped message's reply is never a confirmation answer.
+  if (payload.startsWith('sh1|')) return null;
   if (!payload.startsWith('cr1|')) return resolveButtonPayload(payload);
   const [version, intent, verificationId, rawCycle, extra] = payload.split('|');
   const cycle = Number(rawCycle);

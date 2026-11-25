@@ -17,7 +17,9 @@ export type MessageTextPurpose =
   | 'ack_canceled'
   | 'unresolved_reply_nudge'
   | 'fallback_customer_name'
-  | 'fallback_store_name';
+  | 'fallback_store_name'
+  /** The thank-you after a tap on the Shipped message. */
+  | 'ack_shipping';
 
 export const MESSAGE_TEXT_PURPOSES = [
   'ack_confirmed',
@@ -25,6 +27,7 @@ export const MESSAGE_TEXT_PURPOSES = [
   'unresolved_reply_nudge',
   'fallback_customer_name',
   'fallback_store_name',
+  'ack_shipping',
 ] as const satisfies readonly MessageTextPurpose[];
 
 /** The style every language has; a dialect style overrides it. */
@@ -48,7 +51,10 @@ export interface MessageText {
 }
 
 /** An acknowledgment or a nudge: a free-form message sent to a customer. */
-export type ServiceMessageKind = 'acknowledgment' | 'nudge';
+export type ServiceMessageKind =
+  | 'acknowledgment'
+  | 'nudge'
+  | 'shipping_acknowledgment';
 
 export type ServiceMessageState = 'claimed' | 'sent' | 'skipped' | 'failed';
 

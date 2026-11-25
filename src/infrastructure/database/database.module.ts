@@ -21,6 +21,7 @@ import { OrdersRepository } from './repositories/orders.repository';
 import { VerificationsRepository } from './repositories/verifications.repository';
 import { VerificationAutoCancellationsRepository } from './repositories/verification-auto-cancellations.repository';
 import { VerificationChangeRequestsRepository } from './repositories/verification-change-requests.repository';
+import { ShippingNotificationsRepository } from './repositories/shipping-notifications.repository';
 import { IntegrationsRepository } from './repositories/integrations.repository';
 import { OrganizationsRepository } from './repositories/organizations.repository';
 import { MembershipsRepository } from './repositories/memberships.repository';
@@ -75,6 +76,7 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     VerificationsRepository,
     VerificationAutoCancellationsRepository,
     VerificationChangeRequestsRepository,
+    ShippingNotificationsRepository,
     IntegrationsRepository,
     OrganizationsRepository,
     MembershipsRepository,
@@ -126,6 +128,7 @@ import { CustomerMessagesRepository } from './repositories/customer-messages.rep
     VerificationsRepository,
     VerificationAutoCancellationsRepository,
     VerificationChangeRequestsRepository,
+    ShippingNotificationsRepository,
     IntegrationsRepository,
     OrganizationsRepository,
     MembershipsRepository,

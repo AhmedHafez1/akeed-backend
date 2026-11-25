@@ -18,6 +18,7 @@ import {
   ShopifyAppUninstalledDto,
   ShopifyCustomersDataRequestDto,
   ShopifyCustomersRedactDto,
+  ShopifyOrderUpdatedWebhookDto,
   ShopifyOrderWebhookDto,
   ShopifyShopRedactDto,
 } from './dto/shopify-webhooks.dto';
@@ -51,6 +52,20 @@ export class ShopifyController {
       shopDomain,
       webhookId,
       topic,
+    );
+  }
+
+  @Post('orders-updated')
+  @HttpCode(200)
+  async handleOrderUpdated(
+    @Body() payload: ShopifyOrderUpdatedWebhookDto,
+    @Headers('x-shopify-shop-domain') shopDomain: string,
+    @Headers('x-shopify-webhook-id') webhookId: string,
+  ): Promise<{ received: boolean; duplicate?: boolean }> {
+    return this.orderWebhookService.handleOrderUpdated(
+      payload,
+      shopDomain,
+      webhookId,
     );
   }
 

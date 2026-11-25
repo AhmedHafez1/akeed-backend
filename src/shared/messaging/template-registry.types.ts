@@ -46,15 +46,21 @@ export function isTemplateLanguage(value: unknown): value is TemplateLanguage {
  * the merchant's test, and the reminder too unless the store chose a
  * `cod_reminder` template and WHATSAPP_REMINDER_TEMPLATE_ENABLED is on.
  */
-export type TemplatePurpose = 'cod_confirmation' | 'cod_reminder';
+export type TemplatePurpose =
+  | 'cod_confirmation'
+  | 'cod_reminder'
+  | 'shipping_shipped';
 
 export const TEMPLATE_PURPOSES = [
   'cod_confirmation',
   'cod_reminder',
+  'shipping_shipped',
 ] as const satisfies readonly TemplatePurpose[];
 
 export const COD_CONFIRMATION_PURPOSE: TemplatePurpose = 'cod_confirmation';
 export const COD_REMINDER_PURPOSE: TemplatePurpose = 'cod_reminder';
+/** The Shipped message: informational, sent once when an order ships. */
+export const SHIPPING_SHIPPED_PURPOSE: TemplatePurpose = 'shipping_shipped';
 
 /**
  * The values a send can put in a template. `items`, `region` and `address`
@@ -67,7 +73,9 @@ export type TemplateVariableKey =
   | 'total'
   | 'items'
   | 'region'
-  | 'address';
+  | 'address'
+  /** The tracking line of a shipping message. */
+  | 'tracking';
 
 export type TemplateDetailVariableKey = 'items' | 'region' | 'address';
 

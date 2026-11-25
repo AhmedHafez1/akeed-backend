@@ -1,0 +1,296 @@
+{
+  "_fixture": {
+    "describes": "Replay scenarios for orders/updated. Deliveries are listed in arrival order. Times are relative to the run, so no fixture ages.",
+    "store": "enabled, fulfillmentTrigger and tags are the store's shipping settings; envEnabled is SHIPPING_NOTIFICATIONS_ENABLED",
+    "intake": "stored: whether the webhook is persisted; duplicate: whether the producer saw the delivery id before",
+    "processing": "Every delivery is processed, as if the intake dedupe had missed it (the queue is at-least-once)"
+  },
+  "scenarios": [
+    {
+      "name": "fulfilled with tracking",
+      "store": { "enabled": true, "fulfillmentTrigger": true, "tags": [] },
+      "deliveries": [
+        {
+          "webhookId": "e11-replay-01",
+          "payload": "fulfilled-with-tracking.json",
+          "updatedMinutesAgo": 5
+        }
+      ],
+      "intake": [{ "stored": true, "duplicate": false }],
+      "results": ["handled"],
+      "record": {
+        "trigger": "fulfillment",
+        "status": "pending",
+        "reasonCode": null,
+        "matchedTag": null,
+        "trackingNumber": "1Z999AA10123456784",
+        "trackingUrl": "https://track.example/1Z999AA10123456784"
+      },
+      "enqueued": 1
+    },
+    {
+      "name": "fulfilled without tracking",
+      "store": { "enabled": true, "fulfillmentTrigger": true, "tags": [] },
+      "deliveries": [
+        {
+          "webhookId": "e11-replay-02",
+          "payload": "fulfilled-without-tracking.json",
+          "updatedMinutesAgo": 5
+        }
+      ],
+      "intake": [{ "stored": true, "duplicate": false }],
+      "results": ["handled"],
+      "record": {
+        "trigger": "fulfillment",
+        "status": "pending",
+        "reasonCode": null,
+        "matchedTag": null,
+        "trackingNumber": null,
+        "trackingUrl": null
+      },
+      "enqueued": 1
+    },
+    {
+      "name": "tag added after fulfillment",
+      "store": {
+        "enabled": true,
+        "fulfillmentTrigger": true,
+        "tags": ["تم الشحن"]
+      },
+      "deliveries": [
+        {
+          "webhookId": "e11-replay-03a",
+          "payload": "fulfilled-without-tracking.json",
+          "updatedMinutesAgo": 10
+        },
+        {
+          "webhookId": "e11-replay-03b",
+          "payload": "fulfilled-then-tagged.json",
+          "updatedMinutesAgo": 2
+        }
+      ],
+      "intake": [
+        { "stored": true, "duplicate": false },
+        { "stored": true, "duplicate": false }
+      ],
+      "results": ["handled", "already_recorded"],
+      "record": {
+        "trigger": "fulfillment",
+        "status": "pending",
+        "reasonCode": null,
+        "matchedTag": null,
+        "trackingNumber": null,
+        "trackingUrl": null
+      },
+      "enqueued": 2
+    },
+    {
+      "name": "duplicate delivery",
+      "store": { "enabled": true, "fulfillmentTrigger": true, "tags": [] },
+      "deliveries": [
+        {
+          "webhookId": "e11-replay-04",
+          "payload": "fulfilled-with-tracking.json",
+          "updatedMinutesAgo": 5
+        },
+        {
+          "webhookId": "e11-replay-04",
+          "payload": "fulfilled-with-tracking.json",
+          "updatedMinutesAgo": 5
+        }
+      ],
+      "intake": [
+        { "stored": true, "duplicate": false },
+        { "stored": false, "duplicate": true }
+      ],
+      "results": ["handled", "already_recorded"],
+      "record": {
+        "trigger": "fulfillment",
+        "status": "pending",
+        "reasonCode": null,
+        "matchedTag": null,
+        "trackingNumber": "1Z999AA10123456784",
+        "trackingUrl": "https://track.example/1Z999AA10123456784"
+      },
+      "enqueued": 2
+    },
+    {
+      "name": "out-of-order delivery",
+      "store": {
+        "enabled": true,
+        "fulfillmentTrigger": true,
+        "tags": ["تم الشحن"]
+      },
+      "deliveries": [
+        {
+          "webhookId": "e11-replay-05c",
+          "payload": "fulfilled-with-tracking.json",
+          "updatedMinutesAgo": 1
+        },
+        {
+          "webhookId": "e11-replay-05b",
+          "payload": "tagged-only.json",
+          "updatedMinutesAgo": 20
+        },
+        {
+          "webhookId": "e11-replay-05a",
+          "payload": "unfulfilled-untagged.json",
+          "updatedMinutesAgo": 60
+        }
+      ],
+      "intake": [
+        { "stored": true, "duplicate": false },
+        { "stored": true, "duplicate": false },
+        { "stored": true, "duplicate": false }
+      ],
+      "results": ["handled", "already_recorded", "no_shipping_signal"],
+      "record": {
+        "trigger": "fulfillment",
+        "status": "pending",
+        "reasonCode": null,
+        "matchedTag": null,
+        "trackingNumber": "1Z999AA10123456784",
+        "trackingUrl": "https://track.example/1Z999AA10123456784"
+      },
+      "enqueued": 2
+    },
+    {
+      "name": "tag only, Arabic with surrounding spaces",
+      "store": {
+        "enabled": true,
+        "fulfillmentTrigger": true,
+        "tags": ["تم الشحن"]
+      },
+      "deliveries": [
+        {
+          "webhookId": "e11-replay-06",
+          "payload": "tagged-only.json",
+          "updatedMinutesAgo": 5
+        }
+      ],
+      "intake": [{ "stored": true, "duplicate": false }],
+      "results": ["handled"],
+      "record": {
+        "trigger": "tag",
+        "status": "pending",
+        "reasonCode": null,
+        "matchedTag": "تم الشحن",
+        "trackingNumber": null,
+        "trackingUrl": null
+      },
+      "enqueued": 1
+    },
+    {
+      "name": "Akeed tag echo",
+      "store": {
+        "enabled": true,
+        "fulfillmentTrigger": true,
+        "tags": ["تم الشحن", "Shipped"]
+      },
+      "deliveries": [
+        {
+          "webhookId": "e11-replay-07",
+          "payload": "akeed-tag-echo.json",
+          "updatedMinutesAgo": 5
+        }
+      ],
+      "intake": [{ "stored": true, "duplicate": false }],
+      "results": ["no_shipping_signal"],
+      "record": null,
+      "enqueued": 0
+    },
+    {
+      "name": "cancelled in Shopify",
+      "store": { "enabled": true, "fulfillmentTrigger": true, "tags": [] },
+      "deliveries": [
+        {
+          "webhookId": "e11-replay-08",
+          "payload": "cancelled-in-shopify.json",
+          "updatedMinutesAgo": 5,
+          "cancelled": true
+        }
+      ],
+      "intake": [{ "stored": true, "duplicate": false }],
+      "results": ["handled"],
+      "record": {
+        "trigger": "fulfillment",
+        "status": "failed",
+        "reasonCode": "order_cancelled",
+        "matchedTag": null,
+        "trackingNumber": "CANCEL-1",
+        "trackingUrl": null
+      },
+      "enqueued": 0
+    },
+    {
+      "name": "31-day-old order",
+      "store": { "enabled": true, "fulfillmentTrigger": true, "tags": [] },
+      "deliveries": [
+        {
+          "webhookId": "e11-replay-09",
+          "payload": "fulfilled-with-tracking.json",
+          "updatedMinutesAgo": 5,
+          "createdDaysAgo": 31
+        }
+      ],
+      "intake": [{ "stored": true, "duplicate": false }],
+      "results": ["handled"],
+      "record": {
+        "trigger": "fulfillment",
+        "status": "failed",
+        "reasonCode": "order_too_old",
+        "matchedTag": null,
+        "trackingNumber": "1Z999AA10123456784",
+        "trackingUrl": "https://track.example/1Z999AA10123456784"
+      },
+      "enqueued": 0
+    },
+    {
+      "name": "unknown order",
+      "store": { "enabled": true, "fulfillmentTrigger": true, "tags": [] },
+      "unknownOrder": true,
+      "deliveries": [
+        {
+          "webhookId": "e11-replay-10",
+          "payload": "fulfilled-with-tracking.json",
+          "updatedMinutesAgo": 5
+        }
+      ],
+      "intake": [{ "stored": true, "duplicate": false }],
+      "results": ["order_not_owned"],
+      "record": null,
+      "enqueued": 0
+    },
+    {
+      "name": "feature off for the store",
+      "store": { "enabled": false, "fulfillmentTrigger": true, "tags": [] },
+      "deliveries": [
+        {
+          "webhookId": "e11-replay-11",
+          "payload": "fulfilled-with-tracking.json",
+          "updatedMinutesAgo": 5
+        }
+      ],
+      "intake": [{ "stored": false, "duplicate": false }],
+      "results": ["shipping_feature_off"],
+      "record": null,
+      "enqueued": 0
+    },
+    {
+      "name": "env switch off",
+      "envEnabled": false,
+      "store": { "enabled": true, "fulfillmentTrigger": true, "tags": [] },
+      "deliveries": [
+        {
+          "webhookId": "e11-replay-12",
+          "payload": "fulfilled-with-tracking.json",
+          "updatedMinutesAgo": 5
+        }
+      ],
+      "intake": [{ "stored": false, "duplicate": false }],
+      "results": ["shipping_disabled"],
+      "record": null,
+      "enqueued": 0
+    }
+  ]
+}

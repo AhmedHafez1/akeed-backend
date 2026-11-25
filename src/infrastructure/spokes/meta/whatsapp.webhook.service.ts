@@ -12,7 +12,10 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../../shared/logging/backend-log.util';
-import { VerificationMessageDispatchesRepository } from '../../database/repositories/verification-message-dispatches.repository';
+import {
+  isShippingDispatchKind,
+  VerificationMessageDispatchesRepository,
+} from '../../database/repositories/verification-message-dispatches.repository';
 import {
   CustomerReplyIntent,
   resolveButtonPayload,
@@ -36,6 +39,11 @@ import {
 } from '../../../shared/messaging/change-request-messaging';
 import { ChangeRequestLifecycleService } from '../../../modules/change-requests/change-request-lifecycle.service';
 import { ChangeRequestAcknowledgmentService } from '../../../modules/change-requests/change-request-acknowledgment.service';
+import { ShippingNotificationsService } from '../../../modules/shipping-notifications/shipping-notifications.service';
+import {
+  isShippingPayload,
+  resolveShippingPayload,
+} from '../../../shared/shipping/shipping-reply';
 
 /** How a stored event is being run. */
 export interface WebhookRunOptions {
@@ -74,6 +82,8 @@ export class WhatsAppWebhookService {
     private readonly changeLifecycle?: ChangeRequestLifecycleService,
     @Optional()
     private readonly changeAcknowledgments?: ChangeRequestAcknowledgmentService,
+    @Optional()
+    private readonly shippingNotifications?: ShippingNotificationsService,
   ) {}
 
   /**
@@ -226,6 +236,116 @@ export class WhatsAppWebhookService {
         buildBackendLog(WhatsAppWebhookService.name, {
           action: 'whatsapp-webhook-unresolved-reply',
           outcome: 'failure',
+          ...normalizeError(error),
+        }),
+      );
+    }
+  }
+
+  /**
+   * A tap on the Shipped message. It counts only when it answers that very
+   * message: quoted by its wamid, from the number it went to, sent from the
+   * same sender, and received by the store that sent it. Anything else is
+   * ignored. Never throws.
+   */
+  private async handleShippingReply(
+    message: WhatsAppMessageDto,
+    options: WebhookRunOptions,
+  ): Promise<void> {
+    const parsed = resolveShippingPayload(
+      message.button?.payload ?? message.interactive?.button_reply?.id,
+    );
+    const ignore = (reason: string) =>
+      this.logger.warn(
+        buildBackendLog(WhatsAppWebhookService.name, {
+          action: 'whatsapp-webhook-shipping-reply',
+          outcome: 'skipped',
+          reason,
+        }),
+      );
+    if (!parsed || !this.shippingNotifications) return ignore('unreadable');
+    if (
+      !message.context?.id ||
+      !message.id ||
+      !message.timestamp ||
+      !Number.isFinite(Number(message.timestamp)) ||
+      Number(message.timestamp) <= 0 ||
+      Number(message.timestamp) * 1000 > Date.now() + 60_000
+    )
+      return ignore('missing_context');
+    try {
+      const source = await this.messageDispatches.findByProviderMessageId(
+        message.context.id,
+      );
+      const senderKind = options.receivingSender
+        ? 'merchant_own'
+        : 'akeed_system';
+      const phoneNumberId =
+        options.receivingSender?.phoneNumberId ??
+        options.receivingPhoneNumberId;
+      if (
+        !source ||
+        !isShippingDispatchKind(source.kind) ||
+        source.verificationId !== parsed.verificationId ||
+        source.recipientHash !== customerRecipientHash(message.from) ||
+        source.senderKind !== senderKind ||
+        source.senderPhoneNumberId !== phoneNumberId ||
+        (options.receivingOrgId && source.orgId !== options.receivingOrgId)
+      )
+        return ignore('foreign_or_unbound');
+      const result = await this.shippingNotifications.recordCustomerReply({
+        orgId: source.orgId,
+        verificationId: source.verificationId,
+        reply: parsed.reply,
+        at: this.messageTime(message),
+      });
+      if (
+        result.recorded &&
+        (options.receivingSender || this.switches().acknowledgment)
+      )
+        await this.queueShippingAcknowledgment(source, message, options);
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog(WhatsAppWebhookService.name, {
+          action: 'whatsapp-webhook-shipping-reply',
+          outcome: 'failure',
+          verificationId: parsed.verificationId,
+          ...normalizeError(error),
+        }),
+      );
+      throw error;
+    }
+  }
+
+  /** The thank-you after a recorded shipping tap, under the usual opt-in. */
+  private async queueShippingAcknowledgment(
+    source: { orgId: string; verificationId: string },
+    message: WhatsAppMessageDto,
+    options: WebhookRunOptions,
+  ): Promise<void> {
+    try {
+      if (
+        !(await this.messageDispatches.acknowledgmentEnabledForVerification(
+          source.verificationId,
+          source.orgId,
+          this.messageTime(message),
+        ))
+      )
+        return;
+      await this.automation?.enqueueShippingAcknowledgment({
+        verificationId: source.verificationId,
+        orgId: source.orgId,
+        repliedAt: this.messageTime(message),
+        ...(options.receivingSender
+          ? { receivingSender: options.receivingSender }
+          : {}),
+      });
+    } catch (error) {
+      this.logger.error(
+        buildBackendLog(WhatsAppWebhookService.name, {
+          action: 'whatsapp-webhook-shipping-acknowledgment-enqueue',
+          outcome: 'failure',
+          verificationId: source.verificationId,
           ...normalizeError(error),
         }),
       );
@@ -422,6 +542,13 @@ export class WhatsAppWebhookService {
     options: WebhookRunOptions,
   ) {
     for (const message of messages) {
+      const rawPayload =
+        message.button?.payload ?? message.interactive?.button_reply?.id;
+      if (isShippingPayload(rawPayload)) {
+        // A Shipped message's reply is never a confirmation answer, valid or not.
+        await this.handleShippingReply(message, options);
+        continue;
+      }
       const button = resolveCustomerActionPayload(
         message.button?.payload ?? message.interactive?.button_reply?.id ?? '',
       );

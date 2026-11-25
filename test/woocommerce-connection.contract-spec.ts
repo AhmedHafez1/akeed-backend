@@ -463,6 +463,11 @@ describe('WooCommerce connection PostgreSQL contract', () => {
         auto_cancel_restock boolean DEFAULT true NOT NULL,
         auto_cancel_notify_customer boolean DEFAULT false NOT NULL,
         change_requests_enabled boolean DEFAULT false NOT NULL,
+        shipping_notifications_enabled boolean DEFAULT false NOT NULL,
+        shipping_fulfillment_trigger_enabled boolean DEFAULT true NOT NULL,
+        shipping_tags text[] DEFAULT '{}'::text[] NOT NULL,
+        uninstalled_at timestamp with time zone,
+        paid_through_at timestamp with time zone,
         acknowledgment_enabled boolean DEFAULT false NOT NULL,
         acknowledgment_enabled_at timestamptz,
         created_at timestamptz DEFAULT now(),
@@ -548,7 +553,7 @@ describe('WooCommerce connection PostgreSQL contract', () => {
       const sources = await integrationsOf(tenant.orgId);
       // Billed like Standalone: the account opens with the launch grant.
       await expect(launchGrantOf(tenant.orgId)).resolves.toEqual({
-        account: { status: 'active', posted_balance: 30 },
+        account: { status: 'active', posted_balance: 100 },
         grants: [{ quantity: 100, actor_id: owner.userId }],
       });
       expect(sources).toHaveLength(1);
@@ -3169,7 +3174,7 @@ describe('WooCommerce connection PostgreSQL contract', () => {
       const sources = await integrationsOf(tenant.orgId);
       // A reconnect never grants twice.
       await expect(launchGrantOf(tenant.orgId)).resolves.toMatchObject({
-        account: { posted_balance: 30 },
+        account: { posted_balance: 100 },
         grants: [{ quantity: 100 }],
       });
       expect(sources.map((source) => source.platform_type)).toEqual([

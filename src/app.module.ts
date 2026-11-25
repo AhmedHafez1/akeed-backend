@@ -10,6 +10,10 @@ import { ShopifyCurrentOrderSource } from './infrastructure/spokes/shopify/servi
 import { StandaloneCurrentOrderSource } from './infrastructure/spokes/standalone/services/standalone-current-order.source';
 import { EasyOrdersCurrentOrderSource } from './infrastructure/spokes/easyorders/easyorders-current-order.source';
 import { WooCommerceCurrentOrderSource } from './infrastructure/spokes/woocommerce/woocommerce-current-order.source';
+import { ShippingNotificationsModule } from './modules/shipping-notifications/shipping-notifications.module';
+import { SHIPPING_EVENT_SOURCES } from './modules/shipping-notifications/shipping-event-source';
+import { ShopifyCommerceModule } from './infrastructure/spokes/shopify/shopify-commerce.module';
+import { ShopifyShippingEventSource } from './infrastructure/spokes/shopify/services/shopify-shipping-event.source';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
@@ -157,6 +161,15 @@ const billingModule = BillingModule.register({
           useExisting: MetaTemplateCatalogAdapter,
         },
       ],
+    }),
+    ShippingNotificationsModule.register({
+      // Each store spoke's module provides its own shipping event source.
+      imports: [ShopifyCommerceModule],
+      sources: {
+        provide: SHIPPING_EVENT_SOURCES,
+        inject: [ShopifyShippingEventSource],
+        useFactory: (shopify: ShopifyShippingEventSource) => [shopify],
+      },
     }),
     AuthModule,
     OnboardingModule,

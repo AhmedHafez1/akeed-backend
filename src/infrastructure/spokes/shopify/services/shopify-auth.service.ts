@@ -932,6 +932,12 @@ export class ShopifyAuthService {
         topic: 'ORDERS_CREATE',
         callbackUrl: `${appUrl}/webhooks/shopify/orders-create`,
       },
+      // Shipping notifications: fulfillments and tag changes. Not critical,
+      // so a failed registration never blocks an install.
+      {
+        topic: 'ORDERS_UPDATED',
+        callbackUrl: `${appUrl}/webhooks/shopify/orders-updated`,
+      },
     ];
   }
 

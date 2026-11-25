@@ -476,7 +476,11 @@ describe('starter template drafts', () => {
         ]),
       ).toEqual(
         (['ur', 'es', 'fr', 'tr'] as const).flatMap((language) =>
-          MESSAGE_TEXT_PURPOSES.map((purpose) => [language, purpose]),
+          MESSAGE_TEXT_PURPOSES
+            // The shipping thank-you came later, seeded in every language by
+            // its own migration.
+            .filter((purpose) => purpose !== 'ack_shipping')
+            .map((purpose) => [language, purpose]),
         ),
       );
       expect(

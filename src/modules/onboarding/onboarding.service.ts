@@ -52,6 +52,10 @@ import {
 import { resolveTemplateLanguageForPhone } from '../../shared/messaging/template-language';
 import { CHANGE_BUTTON_LABELS } from '../../shared/messaging/change-request-messaging';
 import {
+  shippingPreviewTemplate,
+  shippingPreviewTrackingLine,
+} from '../../shared/shipping/shipping-preview';
+import {
   storeFirstSendKey,
   storeReminderKey,
 } from '../../shared/messaging/store-template-selection';
@@ -337,6 +341,24 @@ export class OnboardingService {
       template,
       branding: toMerchantBrandingDto(hydratedIntegration),
       acknowledgment: await this.acknowledgmentSettings(template),
+      // Only while the state carries the shipping fields (switch on, source).
+      ...(state.shippingNotificationsEnabled === undefined
+        ? {}
+        : { shipping: await this.shippingPreview() }),
+    };
+  }
+
+  /** The Shipped message as Settings previews it, in every language. */
+  private async shippingPreview(): Promise<
+    NonNullable<SettingsResponseDto['shipping']>
+  > {
+    const templates = await this.templateRegistry.listTemplates();
+    return {
+      messages: byTemplateLanguage((language) => {
+        const template = shippingPreviewTemplate(templates, language);
+        return template ? this.templateMessages.linesFor(template) : null;
+      }),
+      trackingSamples: byTemplateLanguage(shippingPreviewTrackingLine),
     };
   }
 

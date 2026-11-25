@@ -212,7 +212,7 @@ describe('template draft validation', () => {
 
     it('decision 5: refuses a variable outside the set a send can fill', () => {
       expect(
-        rules(validateBody('Your parcel {{tracking}} is ready today')),
+        rules(validateBody('Your parcel {{coupon}} is ready today')),
       ).toEqual(['variable_unknown']);
     });
 

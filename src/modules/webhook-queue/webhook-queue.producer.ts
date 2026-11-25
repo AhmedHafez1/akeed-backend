@@ -15,12 +15,22 @@ import {
   WebhookDispatchService,
 } from './webhook-dispatch.service';
 
+type IngestIntegration = NonNullable<
+  Awaited<ReturnType<IntegrationsRepository['findByPlatformDomain']>>
+>;
+
 interface WebhookIngestionParams {
   platform: PlatformType;
   jobType: WebhookJobType;
   idempotencyKey: string;
   storeDomain: string;
   rawPayload: Record<string, unknown>;
+  /**
+   * Decides, from the store's integration, whether the event is worth
+   * storing. A returned reason drops it: nothing is stored or queued. Used
+   * for high-volume topics a store may not need.
+   */
+  admit?: (integration: IngestIntegration) => string | null;
 }
 
 /**
@@ -70,6 +80,22 @@ export class WebhookQueueProducer {
           reason: 'store_not_connected',
           explanation:
             'The app is still installed on this store, but Akeed has no integration for it (deleted, or onboarding never completed). Order ignored.',
+        }),
+      );
+      return { enqueued: false };
+    }
+
+    const refusal = params.admit?.(integration) ?? null;
+    if (refusal) {
+      this.logger.debug(
+        buildBackendLog(WebhookQueueProducer.name, {
+          action: 'webhook-ingest',
+          outcome: 'skipped',
+          orgId: integration.orgId,
+          shopDomain: params.storeDomain,
+          platform: params.platform,
+          jobType: params.jobType,
+          reason: refusal,
         }),
       );
       return { enqueued: false };

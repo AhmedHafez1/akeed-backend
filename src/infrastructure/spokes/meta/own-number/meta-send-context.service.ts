@@ -75,11 +75,16 @@ export class MetaSendContextService {
       if (
         !dispatch ||
         dispatch.state !== 'sending' ||
-        !['acknowledgment', 'change_acknowledgment'].includes(dispatch.kind)
+        ![
+          'acknowledgment',
+          'change_acknowledgment',
+          'shipping_acknowledgment',
+        ].includes(dispatch.kind)
       )
         return refuse();
       if (
-        dispatch.kind === 'acknowledgment' &&
+        (dispatch.kind === 'acknowledgment' ||
+          dispatch.kind === 'shipping_acknowledgment') &&
         (!readWhatsappTemplateConfig(this.config).messageImprovements
           .acknowledgment ||
           !(await this.serviceMessages?.isClaimedAcknowledgmentDispatch({
