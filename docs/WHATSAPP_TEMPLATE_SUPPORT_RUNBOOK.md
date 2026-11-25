@@ -418,10 +418,10 @@ When a merchant connects their own number, Akeed submits the registry's live tex
 
 ## 13. Shipped message templates
 
-Purpose `shipping_shipped`, utility category, Meta name `akeed_shipping_shipped_default_v1` in every language, named parameters `customer`, `order`, `store` and `tracking`, three quick replies (I'll be home, Reschedule, Change address).
+Purpose `shipping_shipped`, utility category, Meta name `akeed_shipping_shipped_default_v1` in every language, named parameters `customer`, `order`, `store`, `tracking` and `total`. The message asks the customer to have the total ready in cash and to keep the phone on for the courier. Three quick replies in a fixed order: confirm label ("I'll receive it", recorded only), cancel label ("Won't be available") and change label ("Change address"). The last two put the order in needs action.
 
-- All six languages (Arabic, English, Urdu, Spanish, French and Turkish) are registry rows `shipping_shipped.<lang>.default`, seeded active and default with review status `pending`. Staff submit them to Meta by that name; the next sync reads their status. Until a sync reads one `approved`, nothing sends it, whatever the guardrail setting.
-- The `{{tracking}}` value is filled by Akeed, never empty: the tracking number and link, or a fixed sentence when the order has none.
+- All six languages (Arabic, English, Urdu, Spanish, French and Turkish) are seeded as drafts `shipping_shipped.<lang>.default_v1` under **Admin › Templates › Drafts**. Staff review, save and submit each one, then follow the steps in section 9: sync until approved, activate, send a test and make it the default. Until a language has an approved active default, nothing sends it, whatever the guardrail setting.
+- The `{{tracking}}` value is filled by Akeed, never empty: the tracking number and link, or a sentence saying the courier will make contact when the order has none. A carrier link in the text is tappable in WhatsApp; there is no tracking button.
 - Own-number sends use the merchant's copy of the same template, provisioned like the others; while it is not approved there, the message goes from Akeed's number.
 - The thank-you after a tap is the free-form text `ack_shipping`, edited with the other message texts.
 

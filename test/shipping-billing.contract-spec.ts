@@ -225,6 +225,18 @@ function sendService(
   );
 }
 
+async function migrateAgain(name: string) {
+  await harness.client.begin(async (tx) => {
+    const statements = readFileSync(
+      resolve(__dirname, '../drizzle', name),
+      'utf8',
+    )
+      .split('--> statement-breakpoint')
+      .filter((part) => part.trim());
+    for (const statement of statements) await tx.unsafe(statement);
+  });
+}
+
 beforeAll(async () => {
   await harness.setup();
   // The harness base predates the language migrations (0064, 0068); widen the
@@ -233,39 +245,66 @@ beforeAll(async () => {
     ALTER TABLE whatsapp_message_texts DROP CONSTRAINT IF EXISTS whatsapp_message_texts_language_check;
     ALTER TABLE whatsapp_message_texts ADD CONSTRAINT whatsapp_message_texts_language_check CHECK (language IN ('ar', 'en', 'ur', 'es', 'fr', 'tr'));
   `);
-  // The shipping record and its sending columns, run twice to prove reruns.
+  // The shipping record, its sending columns and the Shipped drafts, each run
+  // twice to prove reruns.
   for (const name of [
     '0106_shipping_notifications.sql',
     '0107_shipping_sending.sql',
     '0107_shipping_sending.sql',
+    '0108_shipping_template_drafts.sql',
+    '0108_shipping_template_drafts.sql',
   ])
-    await harness.client.begin(async (tx) => {
-      const statements = readFileSync(
-        resolve(__dirname, '../drizzle', name),
-        'utf8',
-      )
-        .split('--> statement-breakpoint')
-        .filter((part) => part.trim());
-      for (const statement of statements) await tx.unsafe(statement);
-    });
+    await migrateAgain(name);
 });
 afterAll(harness.teardown);
 
 describe('shipping billing against PostgreSQL', () => {
-  it('seeds the six Shipped registry rows as pending', async () => {
-    const rows = await harness.client<
-      { key: string; review_status: string; is_default: boolean }[]
-    >`SELECT key, review_status, is_default FROM whatsapp_templates WHERE purpose = 'shipping_shipped' ORDER BY key`;
-    expect(rows).toEqual(
+  it('leaves the six Shipped templates as drafts, not registry rows', async () => {
+    const rows = await harness.client<{ key: string }[]>`
+      SELECT key FROM whatsapp_templates WHERE purpose = 'shipping_shipped'`;
+    expect(rows).toEqual([]);
+    const drafts = await harness.client<
+      {
+        key: string;
+        state: string;
+        template_id: string | null;
+        change_label: string | null;
+      }[]
+    >`SELECT key, state, template_id, change_label FROM whatsapp_template_drafts WHERE purpose = 'shipping_shipped' ORDER BY key`;
+    expect(
+      drafts.map(({ key, state, template_id }) => ({
+        key,
+        state,
+        template_id,
+      })),
+    ).toEqual(
       ['ar', 'en', 'es', 'fr', 'tr', 'ur'].map((language) => ({
-        key: `shipping_shipped.${language}.default`,
-        review_status: 'pending',
-        is_default: true,
+        key: `shipping_shipped.${language}.default_v1`,
+        state: 'draft',
+        template_id: null,
       })),
     );
-    const drafts = await harness.client<{ key: string; state: string }[]>`
-      SELECT key, state FROM whatsapp_template_drafts WHERE purpose = 'shipping_shipped'`;
-    expect(drafts).toEqual([]);
+    expect(drafts.every((draft) => !!draft.change_label)).toBe(true);
+    const [ack] = await harness.client<{ body: string }[]>`
+      SELECT body FROM whatsapp_message_texts WHERE purpose = 'ack_shipping' AND language = 'en' AND style = 'default'`;
+    expect(ack.body).toBe(
+      "Thank you. We've let {{store}} know about your order {{order}}.",
+    );
+  });
+
+  it('keeps a Shipped template the provider already holds', async () => {
+    await harness.client`
+      INSERT INTO whatsapp_templates (key, purpose, language, style, meta_template_name, meta_language_code, parameter_format, variable_mapping, preview, meta_template_id, review_status)
+      VALUES ('shipping_shipped.en.default', 'shipping_shipped', 'en', 'default', 'akeed_shipping_shipped_default_v1', 'en', 'named', '[]'::jsonb, '{}'::jsonb, 'meta-1', 'approved')`;
+    try {
+      await migrateAgain('0108_shipping_template_drafts.sql');
+      const rows = await harness.client<{ key: string }[]>`
+        SELECT key FROM whatsapp_templates WHERE purpose = 'shipping_shipped'`;
+      expect(rows).toEqual([{ key: 'shipping_shipped.en.default' }]);
+    } finally {
+      await harness.client`
+        DELETE FROM whatsapp_templates WHERE key = 'shipping_shipped.en.default'`;
+    }
   });
 
   it('concurrent sends at the end of the pool never overdraw it', async () => {

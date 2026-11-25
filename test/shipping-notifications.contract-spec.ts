@@ -242,6 +242,8 @@ beforeAll(async () => {
   await migrate('0106_shipping_notifications.sql');
   await migrate('0107_shipping_sending.sql');
   await migrate('0107_shipping_sending.sql');
+  await migrate('0108_shipping_template_drafts.sql');
+  await migrate('0108_shipping_template_drafts.sql');
 });
 
 afterAll(async () => {

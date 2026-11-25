@@ -16,13 +16,15 @@ const TRACKING_PREFIX: Record<TemplateLanguage, string> = {
   tr: 'Kargo takibi:',
 };
 
+// The template already asks for the cash; without tracking, the line says
+// who comes next instead of repeating the payment.
 const NO_TRACKING_LINE: Record<TemplateLanguage, string> = {
-  ar: 'الدفع نقدًا عند الاستلام.',
-  en: 'Payment is cash on delivery.',
-  ur: 'ادائیگی ڈیلیوری پر نقد ہوگی۔',
-  es: 'El pago es contra reembolso.',
-  fr: 'Le paiement se fait à la livraison.',
-  tr: 'Ödeme kapıda nakit yapılacaktır.',
+  ar: 'سيتواصل معك المندوب قبل التوصيل.',
+  en: 'The courier will contact you before delivery.',
+  ur: 'ڈیلیوری سے پہلے کورئیر آپ سے رابطہ کرے گا۔',
+  es: 'El repartidor te contactará antes de la entrega.',
+  fr: 'Le livreur vous contactera avant la livraison.',
+  tr: 'Kurye teslimattan önce sizinle iletişime geçecek.',
 };
 
 function oneLine(value: string | null | undefined): string {
