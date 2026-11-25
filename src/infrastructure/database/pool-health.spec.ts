@@ -272,10 +272,17 @@ describe('DeadlineBurstDetector', () => {
     );
 
     const first = detector.record();
-    await detector.record();
-    answer(ok);
-    await first;
+    let secondSettled = false;
+    const second = detector.record().then(() => (secondSettled = true));
+    await Promise.resolve();
+    // The later deadline waits for the running check's decision.
+    expect(secondSettled).toBe(false);
+    expect(recycler.recycle).not.toHaveBeenCalled();
 
+    answer(ok);
+    await Promise.all([first, second]);
+
+    expect(secondSettled).toBe(true);
     expect(pingFresh).toHaveBeenCalledTimes(1);
     expect(recycler.recycle).toHaveBeenCalledTimes(1);
   });

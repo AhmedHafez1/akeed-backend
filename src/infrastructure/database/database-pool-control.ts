@@ -121,10 +121,13 @@ export class DatabasePoolControl<T extends object = object> {
     return true;
   }
 
-  /** Called for every missed statement or transaction deadline. */
-  noteDeadline(): void {
-    if (!this.options.enabled) return;
-    this.detector.record().catch((error: unknown) =>
+  /**
+   * Called for every missed statement or transaction deadline. Settles, and
+   * never rejects, once any replacement it causes has happened.
+   */
+  noteDeadline(): Promise<void> {
+    if (!this.options.enabled) return Promise.resolve();
+    return this.detector.record().catch((error: unknown) =>
       this.options.logger.error(
         buildBackendLog(MODULE, {
           action: 'database-deadline-burst',

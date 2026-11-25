@@ -202,7 +202,7 @@ export type DeadlineBurstEvent =
  */
 export class DeadlineBurstDetector {
   private deadlines: number[] = [];
-  private checking = false;
+  private checking: Promise<void> | undefined;
 
   constructor(private readonly deps: DeadlineBurstDeps) {}
 
@@ -210,6 +210,11 @@ export class DeadlineBurstDetector {
     return this.deadlines.length;
   }
 
+  /**
+   * Settles once this deadline's replacement decision is made. A deadline
+   * recorded while a check runs waits for that check, so a read retried
+   * after it runs on whichever pool the check leaves current.
+   */
   async record(): Promise<void> {
     const now = this.deps.now();
     this.deadlines = this.deadlines.filter(
@@ -217,23 +222,25 @@ export class DeadlineBurstDetector {
     );
     this.deadlines.push(now);
     if (this.deadlines.length < this.deps.threshold) return;
-    if (this.checking || !this.deps.recycler.allowed()) return;
+    if (this.checking) return this.checking;
+    if (!this.deps.recycler.allowed()) return;
 
-    this.checking = true;
-    const deadlines = this.deadlines.length;
-    try {
-      const fresh = await this.deps.pingFresh();
-      if (fresh.outcome !== 'ok') {
-        this.deps.onBurst({ kind: 'database-unreachable', deadlines, fresh });
-        return;
-      }
-      // Another trigger may have replaced the pool while the ping ran.
-      if (!this.deps.recycler.allowed()) return;
-      this.deadlines = [];
-      this.deps.onBurst({ kind: 'recycle', deadlines, fresh });
-      this.deps.recycler.recycle();
-    } finally {
-      this.checking = false;
+    this.checking = this.check(this.deadlines.length).finally(() => {
+      this.checking = undefined;
+    });
+    return this.checking;
+  }
+
+  private async check(deadlines: number): Promise<void> {
+    const fresh = await this.deps.pingFresh();
+    if (fresh.outcome !== 'ok') {
+      this.deps.onBurst({ kind: 'database-unreachable', deadlines, fresh });
+      return;
     }
+    // Another trigger may have replaced the pool while the ping ran.
+    if (!this.deps.recycler.allowed()) return;
+    this.deadlines = [];
+    this.deps.onBurst({ kind: 'recycle', deadlines, fresh });
+    this.deps.recycler.recycle();
   }
 }

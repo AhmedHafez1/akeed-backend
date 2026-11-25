@@ -13,6 +13,7 @@ import {
 } from '../../shared/config/database-resilience.config';
 import { buildBackendLog } from '../../shared/logging/backend-log.util';
 import {
+  currentRequestContext,
   noteConnection,
   noteConnectionClosed,
 } from '../../shared/request-context/request-context';
@@ -219,17 +220,23 @@ export const drizzleProvider: Provider = {
     const bounded = boundPostgresClient(control.client, {
       queryTimeoutMs: resilience.queryTimeoutMs,
       transactionTimeoutMs: resilience.transactionTimeoutMs,
-      onTimeout: (scope, timeoutMs) => {
+      // A plain read outside a transaction is retried once, after a stuck
+      // pool has been replaced, instead of failing the request.
+      retryReads: true,
+      onTimeout: (scope, timeoutMs, { caller, retry }) => {
+        const requestId = currentRequestContext()?.requestId;
         logger.warn(
           buildBackendLog('DatabaseProvider', {
             action: 'database-deadline',
-            outcome: 'failure',
+            outcome: retry ? 'retry' : 'failure',
             reason: 'timeout',
             scope,
             timeoutMs,
+            ...(caller ? { caller } : {}),
+            ...(requestId ? { requestId } : {}),
           }),
         );
-        control.noteDeadline();
+        return control.noteDeadline();
       },
     });
     const db = drizzle(instrumentPostgresClient(bounded), { schema });
