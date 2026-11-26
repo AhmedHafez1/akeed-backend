@@ -170,9 +170,16 @@ export function buildMetaCreateBody(
   };
 }
 
-/** The edit request body: every component, replaced. */
+/**
+ * The edit request body: every component, replaced. Meta reads an edit
+ * without `parameter_format` as positional, so a named template's
+ * `{{name}}` parameters would be refused; the format is always sent.
+ */
 export function buildMetaEditBody(
   submission: TemplateEditSubmission,
 ): Record<string, unknown> {
-  return { components: buildMetaComponents(submission) };
+  return {
+    parameter_format: META_PARAMETER_FORMAT[submission.parameterFormat],
+    components: buildMetaComponents(submission),
+  };
 }
