@@ -88,6 +88,10 @@ describe('sender alerts', () => {
       fallback: { reason: 'degraded:payment', at: '2026-11-04T10:00:00Z' },
     });
     expect(result.map((a) => a.kind)).toEqual(['payment', 'fallback']);
+    expect(result[0]).toMatchObject({
+      severity: 'warning',
+      action: 'whatsapp_manager',
+    });
     expect(suppressFallbackEmail(result)).toBe(true);
   });
   it.each([

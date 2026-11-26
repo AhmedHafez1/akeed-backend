@@ -225,6 +225,8 @@ export class WhatsappSenderAlertsRepository {
         )
           return null;
         let reason = skipReason;
+        // The banner asks for the payment method; no email.
+        if (alert.kind === 'payment') reason ??= 'payment_no_email';
         if (alert.kind === 'fallback') {
           // A BLOCKED health check is usually Meta still setting the number
           // up, not a confirmed restriction; the banner covers it, no email.

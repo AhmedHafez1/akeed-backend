@@ -93,6 +93,11 @@ describe('Meta phone health mapping', () => {
     });
     const result = await s.client.readHealth('1000', 'synthetic-token');
     expect(result.status).toBe('BLOCKED');
+    // A failing payment method is a payment problem, not a restriction.
+    expect(result.failure).toMatchObject({
+      class: 'payment',
+      degrade: 'payment',
+    });
     expect(result.blockers).toEqual([
       { entity: 'WABA', code: '141006', reason: 'y'.repeat(200) },
       { entity: 'APP', code: '141010' },
