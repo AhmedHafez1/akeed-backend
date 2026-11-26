@@ -9,7 +9,8 @@ for (const [kind, codes] of Object.entries({
   recipient: [131026, 131021, 131050, 131049],
   retryable: [1, 2, 4, 80007, 130429, 131000, 131016, 131056, 131057, 133004],
   credentials: [0, 3, 10, 190, 200, 131005],
-  payment: [131042],
+  // 141006 is the health-status code for a missing or failing payment method.
+  payment: [131042, 141006],
   restricted: [368, 131031, 131045, 131048, 133010, 131037],
   template: [132001, 132007, 132015, 132016],
   payload: [100, 131008, 131009, 132000, 132005, 132012, 135000],

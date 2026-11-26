@@ -72,7 +72,7 @@ export function senderAlerts(
       'critical',
     );
   if (facts.degradedClass === 'payment')
-    add('payment', 'payment', 'whatsapp_manager', 'critical');
+    add('payment', 'payment', 'whatsapp_manager');
   if (facts.qualityRating === 'RED')
     add('quality_drop', 'red', 'whatsapp_manager');
   const affected = facts.templates.filter(

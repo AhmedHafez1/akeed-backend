@@ -228,13 +228,15 @@ describe('sender alert PostgreSQL contract', () => {
       email_error: 'specific_cause',
       email_claimed_at: null,
     });
-    expect(
-      await repo.claimEmail(
-        org,
-        pending.find((a) => a.kind === 'payment')!.id,
-        true,
-      ),
-    ).toMatchObject({ kind: 'payment' });
+    // The payment banner asks for the payment method; it sends no email.
+    const payment = pending.find((a) => a.kind === 'payment')!;
+    expect(await repo.claimEmail(org, payment.id, true)).toBeNull();
+    const [paymentRow] =
+      await client`SELECT email_status,email_error FROM whatsapp_sender_alerts WHERE id=${payment.id}`;
+    expect(paymentRow).toMatchObject({
+      email_status: 'skipped',
+      email_error: 'payment_no_email',
+    });
   });
   it('records disabled email ahead of suppression and records missing recipients without retrying', async () => {
     await fallback();
