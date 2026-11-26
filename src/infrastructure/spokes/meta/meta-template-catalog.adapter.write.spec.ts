@@ -316,6 +316,8 @@ describe('MetaTemplateCatalogAdapter create and edit', () => {
           url: `https://graph.facebook.com/v26.0/${template.id}`,
           authorization: `Bearer ${FAKE_TOKEN}`,
           body: {
+            // Without the format Meta reads the named body as positional.
+            parameter_format: 'NAMED',
             components: [
               {
                 type: 'BODY',
@@ -352,6 +354,53 @@ describe('MetaTemplateCatalogAdapter create and edit', () => {
           ),
         ),
       ).resolves.toMatchObject({ code: 'status_locked', ambiguous: false });
+    });
+
+    it('sends the positional format of a positional template', async () => {
+      const { adapter, api } = setup();
+
+      await adapter.editTemplate(
+        api.templates[0].id,
+        toTemplateSubmission(
+          draft({
+            parameterFormat: 'positional',
+            body: 'Hi {{customer}}, order {{order}} is ready to confirm now.',
+          }),
+        ),
+      );
+
+      expect(api.writes[0].body).toMatchObject({
+        parameter_format: 'POSITIONAL',
+      });
+    });
+
+    it("logs Meta's subcode and short title, never its longer message", async () => {
+      const { adapter, api } = setup();
+      api.failNextWrite({
+        kind: 'meta_error',
+        httpStatus: 400,
+        code: 100,
+        subcode: 2388043,
+        userTitle: '  Invalid parameter  ',
+        userMessage: 'Hi Ahmed, your order TEST-1 echoed back',
+      });
+
+      const error = await failure(
+        adapter.editTemplate(
+          api.templates[0].id,
+          toTemplateSubmission(draft()),
+        ),
+      );
+
+      expect(error).toMatchObject({
+        code: 'invalid_parameter',
+        ambiguous: false,
+        providerCode: 100,
+      });
+      expect(logged()).toContain('"providerSubcode":2388043');
+      expect(logged()).toContain('"providerTitle":"Invalid parameter"');
+      expect(logged()).not.toContain('echoed back');
+      expect(logged()).not.toContain(FAKE_TOKEN);
     });
 
     it('treats an edit with no answer as unresolved and does not repeat it', async () => {

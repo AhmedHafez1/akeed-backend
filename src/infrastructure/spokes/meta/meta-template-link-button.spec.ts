@@ -6,6 +6,7 @@ import {
 } from '../../../shared/messaging/tracking-link-button';
 import {
   buildMetaCreateBody,
+  buildMetaEditBody,
   buildMetaTemplateCopyBody,
 } from './meta-template-components.builder';
 import { mapComponents } from './meta-template.mapping';
@@ -47,6 +48,24 @@ describe('the Track order link button in Meta syntax', () => {
       components: unknown[];
     };
     expect(body.components.at(-1)).toEqual(EXPECTED_BUTTONS);
+  });
+
+  it('edits a named Shipped template with its format, named body and positional link', () => {
+    expect(buildMetaEditBody(SUBMISSION)).toEqual({
+      parameter_format: 'NAMED',
+      components: [
+        {
+          type: 'BODY',
+          text: 'Hello {{customer}}',
+          example: {
+            body_text_named_params: [
+              { param_name: 'customer', example: 'Ahmed' },
+            ],
+          },
+        },
+        EXPECTED_BUTTONS,
+      ],
+    });
   });
 
   it('keeps the quick replies grouped even when given out of order', () => {

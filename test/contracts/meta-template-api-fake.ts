@@ -48,7 +48,14 @@ export interface FakeMetaTemplate {
 }
 
 export type FakeMetaFailure =
-  | { kind: 'meta_error'; httpStatus: number; code: number }
+  | {
+      kind: 'meta_error';
+      httpStatus: number;
+      code: number;
+      subcode?: number;
+      userTitle?: string;
+      userMessage?: string;
+    }
   | { kind: 'network' }
   | { kind: 'server_error'; httpStatus: number };
 
@@ -315,6 +322,15 @@ export class FakeMetaTemplateApi {
               message: `Synthetic failure for token ${FAKE_TOKEN}`,
               type: 'OAuthException',
               code: failure.code,
+              ...(failure.subcode !== undefined
+                ? { error_subcode: failure.subcode }
+                : {}),
+              ...(failure.userTitle !== undefined
+                ? { error_user_title: failure.userTitle }
+                : {}),
+              ...(failure.userMessage !== undefined
+                ? { error_user_msg: failure.userMessage }
+                : {}),
               fbtrace_id: 'synthetic-trace',
             },
           }

@@ -383,9 +383,14 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
     error: unknown,
   ): TemplateSubmissionError {
     if (
-      !isAxiosError<{ error?: { code?: unknown; fbtrace_id?: unknown } }>(
-        error,
-      ) ||
+      !isAxiosError<{
+        error?: {
+          code?: unknown;
+          error_subcode?: unknown;
+          error_user_title?: unknown;
+          fbtrace_id?: unknown;
+        };
+      }>(error) ||
       !error.response
     ) {
       return this.writeFailure(action, 'unresolved', true);
@@ -393,6 +398,19 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
     const { status, data } = error.response;
     const metaCode = data?.error?.code;
     const trace = data?.error?.fbtrace_id;
+    // Meta's subcode and short title say which field it refused. The title is
+    // Meta's own wording; the longer user message can quote template text and
+    // is not logged.
+    const subcode = data?.error?.error_subcode;
+    const title = data?.error?.error_user_title;
+    const providerDetail = {
+      ...(typeof subcode === 'number' && Number.isInteger(subcode)
+        ? { providerSubcode: subcode }
+        : {}),
+      ...(typeof title === 'string' && title.trim().length > 0
+        ? { providerTitle: title.trim().slice(0, 200) }
+        : {}),
+    };
     const reference =
       typeof trace === 'string' && TRACE_REFERENCE.test(trace)
         ? trace
@@ -409,6 +427,8 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
         status,
         status,
         reference,
+        undefined,
+        providerDetail,
       );
     }
     return this.writeFailure(
@@ -418,6 +438,8 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
       metaCode,
       status,
       reference,
+      undefined,
+      providerDetail,
     );
   }
 
@@ -429,6 +451,7 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
     httpStatus?: number,
     providerReference?: string,
     detail?: string,
+    providerDetail: { providerSubcode?: number; providerTitle?: string } = {},
   ): TemplateSubmissionError {
     this.logger.warn(
       buildBackendLog(MetaTemplateCatalogAdapter.name, {
@@ -440,6 +463,7 @@ export class MetaTemplateCatalogAdapter implements TemplateCatalogPort {
         ...(providerCode !== undefined ? { providerCode } : {}),
         ...(httpStatus !== undefined ? { httpStatus } : {}),
         ...(providerReference ? { providerReference } : {}),
+        ...providerDetail,
       }),
     );
     return new TemplateSubmissionError(
