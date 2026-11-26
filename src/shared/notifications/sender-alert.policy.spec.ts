@@ -90,11 +90,14 @@ describe('sender alerts', () => {
     expect(result.map((a) => a.kind)).toEqual(['payment', 'fallback']);
     expect(suppressFallbackEmail(result)).toBe(true);
   });
-  it.each(['credentials', 'restricted'])(
-    'gives an action for %s even before another send',
-    (degradedClass) => {
+  it.each([
+    ['credentials', 'reconnect'],
+    ['restricted', 'none'],
+  ])(
+    'reports %s even before another send, with action %s',
+    (degradedClass, action) => {
       expect(evaluate({ degradedClass })).toMatchObject([
-        { kind: 'fallback', reason: degradedClass },
+        { kind: 'fallback', reason: degradedClass, action },
       ]);
     },
   );

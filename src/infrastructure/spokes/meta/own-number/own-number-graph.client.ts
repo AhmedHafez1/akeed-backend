@@ -166,10 +166,12 @@ export class OwnNumberGraphClient {
       failures.find((item) => item.class === 'payment') ??
       failures.find((item) => item.class === 'restricted');
     const limitations = healthLimitations(raw.health_status?.entities);
+    const blockers = healthBlockers(raw.health_status?.entities);
     return {
       status,
       ...(failure ? { failure } : {}),
       ...(limitations.length ? { limitations } : {}),
+      ...(blockers.length ? { blockers } : {}),
       qualityRating: providerEnum(raw.quality_rating),
       nameStatus: providerEnum(raw.name_status),
     };
@@ -682,4 +684,37 @@ function healthLimitations(entities: unknown): string[] {
     .filter((line): line is string => typeof line === 'string')
     .map((line) => line.slice(0, 200))
     .slice(0, 3);
+}
+
+/**
+ * Which part of the account Meta reports as blocked (phone number, account,
+ * business or app) with its error code and short description, so support
+ * can see why a number cannot send. Bounded, provider text only.
+ */
+function healthBlockers(
+  entities: unknown,
+): { entity: string; code: string; reason?: string }[] {
+  if (!Array.isArray(entities)) return [];
+  return entities
+    .flatMap(
+      (entity: {
+        entity_type?: unknown;
+        errors?: { error_code?: unknown; error_description?: unknown }[];
+      }) =>
+        (Array.isArray(entity?.errors) ? entity.errors : []).map((error) => ({
+          entity:
+            typeof entity.entity_type === 'string'
+              ? entity.entity_type.slice(0, 40)
+              : 'unknown',
+          code:
+            typeof error?.error_code === 'number' ||
+            typeof error?.error_code === 'string'
+              ? String(error.error_code).slice(0, 20)
+              : 'unknown',
+          ...(typeof error?.error_description === 'string'
+            ? { reason: error.error_description.slice(0, 200) }
+            : {}),
+        })),
+    )
+    .slice(0, 5);
 }

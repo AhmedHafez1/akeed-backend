@@ -309,17 +309,15 @@ describe('sender alert PostgreSQL contract', () => {
       expect(await repo.reconcile(org, true)).toHaveLength(1);
     });
 
-    it('sends the normal email once every template is settled and the number is still restricted', async () => {
+    it('sends no email for a restricted number once every template is settled', async () => {
       await newNumberInReview();
       const [incident] = await repo.reconcile(org, true);
       expect(await repo.claimEmail(org, incident.id, true)).toBeNull();
       await client`UPDATE whatsapp_connection_templates SET status='approved'`;
-      expect(await repo.claimEmail(org, incident.id, true)).toMatchObject({
-        kind: 'fallback',
-        reason: 'restricted',
-      });
+      expect(await repo.claimEmail(org, incident.id, true)).toBeNull();
       expect(await emailRow(incident.id)).toMatchObject({
-        email_status: 'sending',
+        email_status: 'skipped',
+        email_error: 'restricted_no_email',
       });
     });
 
@@ -337,22 +335,25 @@ describe('sender alert PostgreSQL contract', () => {
       expect((await emailRow(incident.id)).resolved_at).not.toBeNull();
     });
 
-    it('reports a review that has stalled for more than 72 hours', async () => {
+    it('sends no restriction email after a review that has stalled for more than 72 hours', async () => {
       await newNumberInReview();
       await client`UPDATE whatsapp_connections SET connected_at=now()-interval '73 hours' WHERE org_id=${org}`;
       const [incident] = await repo.reconcile(org, true);
-      expect(await repo.claimEmail(org, incident.id, true)).toMatchObject({
-        kind: 'fallback',
+      expect(await repo.claimEmail(org, incident.id, true)).toBeNull();
+      expect(await emailRow(incident.id)).toMatchObject({
+        email_status: 'skipped',
+        email_error: 'restricted_no_email',
       });
     });
 
-    it('still reports a number that was active and later degraded', async () => {
+    it('sends no restriction email for a number that was active and later degraded', async () => {
       await newNumberInReview();
       await client`UPDATE whatsapp_connections SET state='active' WHERE org_id=${org}`;
       const [incident] = await repo.reconcile(org, true);
-      expect(await repo.claimEmail(org, incident.id, true)).toMatchObject({
-        kind: 'fallback',
-        reason: 'restricted',
+      expect(await repo.claimEmail(org, incident.id, true)).toBeNull();
+      expect(await emailRow(incident.id)).toMatchObject({
+        email_status: 'skipped',
+        email_error: 'restricted_no_email',
       });
     });
 

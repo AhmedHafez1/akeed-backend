@@ -382,9 +382,12 @@ export class WhatsappConnectionsRepository {
     if (result.status === 'AVAILABLE' && degraded !== 'credentials')
       degraded = null;
     // Meta's LIMITED can send, with restrictions such as a lower message
-    // limit for a new business. It activates the number; a send Meta refuses
-    // over a limit falls back to Akeed's number and degrades it. Only
-    // AVAILABLE clears a degradation.
+    // limit or a display name still in review. It activates the number and
+    // clears a restriction, so a number that recovers from BLOCKED to LIMITED
+    // sends again; a send Meta refuses still falls back to Akeed's number and
+    // degrades it. Credentials and payment wait for AVAILABLE.
+    if (result.status === 'LIMITED' && degraded === 'restricted')
+      degraded = null;
     const active =
       claim.state === 'verifying' &&
       (result.status === 'AVAILABLE' || result.status === 'LIMITED') &&

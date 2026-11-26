@@ -65,6 +65,42 @@ describe('Meta phone health mapping', () => {
       'third',
     ]);
   });
+  it('reports which part Meta blocked, with its code and reason, bounded', async () => {
+    const s = setup({
+      id: '1000',
+      health_status: {
+        can_send_message: 'BLOCKED',
+        entities: [
+          {
+            entity_type: 'PHONE_NUMBER',
+            can_send_message: 'LIMITED',
+            additional_info: ['Your display name has not been approved yet.'],
+          },
+          {
+            entity_type: 'WABA',
+            can_send_message: 'BLOCKED',
+            errors: [
+              {
+                error_code: 141006,
+                error_description: 'y'.repeat(500),
+                possible_solution: 'not kept',
+              },
+            ],
+          },
+          { entity_type: 'APP', errors: [{ error_code: '141010' }] },
+        ],
+      },
+    });
+    const result = await s.client.readHealth('1000', 'synthetic-token');
+    expect(result.status).toBe('BLOCKED');
+    expect(result.blockers).toEqual([
+      { entity: 'WABA', code: '141006', reason: 'y'.repeat(200) },
+      { entity: 'APP', code: '141010' },
+    ]);
+    expect(result.limitations).toEqual([
+      'Your display name has not been approved yet.',
+    ]);
+  });
   it('uses health entity error codes for degradation', async () => {
     const s = setup({
       id: '1000',

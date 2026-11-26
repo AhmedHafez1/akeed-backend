@@ -226,6 +226,9 @@ export class WhatsappSenderAlertsRepository {
           return null;
         let reason = skipReason;
         if (alert.kind === 'fallback') {
+          // A BLOCKED health check is usually Meta still setting the number
+          // up, not a confirmed restriction; the banner covers it, no email.
+          if (alert.reason === 'restricted') reason ??= 'restricted_no_email';
           if (suppressFallbackEmail(alerts)) reason ??= 'specific_cause';
           const [recent] = await tx
             .select({ id: whatsappSenderAlerts.id })

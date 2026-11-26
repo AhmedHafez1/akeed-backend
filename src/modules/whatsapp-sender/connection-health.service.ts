@@ -67,6 +67,7 @@ export class ConnectionHealthService {
         connectionId: id,
         healthStatus: result.status,
         ...(result.limitations ? { limitations: result.limitations } : {}),
+        ...(result.blockers ? { blockers: result.blockers } : {}),
         state: row.state,
       }),
     );
