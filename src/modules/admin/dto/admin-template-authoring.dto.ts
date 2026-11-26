@@ -78,6 +78,13 @@ export class AdminTemplateSamplesDto {
   @IsString()
   @MaxLength(ADDRESS_SAMPLE_STORE_LIMIT)
   address?: string;
+
+  /** The Shipped message's tracking line. */
+  @IsOptional()
+  @TrimString()
+  @IsString()
+  @MaxLength(SAMPLE_STORE_LIMIT)
+  tracking?: string;
 }
 
 /** The text of a template: what an edit can change. */
