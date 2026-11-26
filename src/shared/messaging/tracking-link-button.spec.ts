@@ -109,10 +109,7 @@ describe('the Track order link button', () => {
         {
           kind: 'url',
           text: 'Track order',
-          url: [
-            { text: 'https://getakeed.com/t/' },
-            { parameter: 'tracking_code' },
-          ],
+          url: [{ text: 'https://getakeed.com/t/' }, { parameter: '1' }],
           example: `https://getakeed.com/t/${TRACKING_LINK_SAMPLE_CODE}`,
         },
       ]);
@@ -124,10 +121,11 @@ describe('the Track order link button', () => {
       ).toEqual(['quick_reply', 'quick_reply', 'quick_reply']);
     });
 
-    it('uses a positional ending in a positional template', () => {
-      expect(trackingLinkButton('Track', `${BASE}/`, 'positional').url).toEqual(
-        [{ text: 'https://getakeed.com/t/' }, { parameter: '1' }],
-      );
+    it('ends the link in a position, whatever the origin looks like', () => {
+      expect(trackingLinkButton('Track', `${BASE}/`).url).toEqual([
+        { text: 'https://getakeed.com/t/' },
+        { parameter: '1' },
+      ]);
     });
 
     it('reviews with a well-formed sample code', () => {
@@ -271,6 +269,47 @@ describe('the Track order link button', () => {
 
     it('accepts three quick replies and the link button', () => {
       expect(buttonDrift(shippedModel)).toEqual([]);
+    });
+
+    const withLink = (
+      url: TemplateTextModel['buttons'][number]['url'],
+    ): TemplateTextModel => ({
+      ...shippedModel,
+      buttons: [
+        ...shippedModel.buttons.slice(0, 3),
+        { kind: 'url', text: 'Track order', url },
+      ],
+    });
+
+    it('reports a link the provider holds as fixed text', () => {
+      const held = 'https://getakeed.com/t/%7B%7Btracking_code%7D%7D';
+
+      expect(buttonDrift(withLink([{ text: held }]))).toEqual([
+        {
+          kind: 'buttons',
+          severity: 'send',
+          registered: 'url /t/{{1}}',
+          provider: `url ${held}`,
+        },
+      ]);
+    });
+
+    it('reports a link that does not end in the tracking page', () => {
+      expect(
+        buttonDrift(
+          withLink([
+            { text: 'https://getakeed.com/orders/' },
+            { parameter: '1' },
+          ]),
+        ),
+      ).toEqual([
+        {
+          kind: 'buttons',
+          severity: 'send',
+          registered: 'url /t/{{1}}',
+          provider: 'url https://getakeed.com/orders/{{1}}',
+        },
+      ]);
     });
 
     it('reports a Shipped template without its link button', () => {

@@ -43,6 +43,19 @@ function sendableShippingDefault(
 }
 
 /**
+ * A Shipped template as it is sent. The synced text goes along so the sender
+ * can find the Track order button and fill the end of its link.
+ */
+export function toSelectedShippingTemplate(
+  template: RegistryTemplate,
+): SelectedCodTemplate {
+  return {
+    ...toSelectedTemplate(template),
+    ...(template.components ? { components: template.components } : {}),
+  };
+}
+
+/**
  * Picks the Shipped template. The language is chosen exactly as for the
  * store's confirmations. If it has no approved Shipped template, the phone's
  * base language (Arabic for an Arabic country code, English otherwise) stands
@@ -74,12 +87,7 @@ export function selectShippingTemplate(
     const template = sendableShippingDefault(templates, language);
     if (template)
       return {
-        // The synced text goes along so the sender can find the Track order
-        // button and fill the end of its link.
-        template: {
-          ...toSelectedTemplate(template),
-          ...(template.components ? { components: template.components } : {}),
-        },
+        template: toSelectedShippingTemplate(template),
         requestedLanguage,
         ...(language !== requestedLanguage
           ? { fallbackReason: 'language_unavailable' as const }

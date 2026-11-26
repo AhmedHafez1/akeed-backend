@@ -490,13 +490,7 @@ export class WhatsappTemplateDraftsRepository {
               current.parameterFormat,
               params.variables,
             ),
-            preview: {
-              ...toPreview(current),
-              ...(current.changeLabel
-                ? { changeButton: current.changeLabel }
-                : {}),
-              ...(current.linkLabel ? { linkButton: current.linkLabel } : {}),
-            },
+            preview: toPreview(current),
             changeRequestOfKey: current.changeRequestOfKey,
             metaTemplateId: params.result.providerTemplateId,
             reviewStatus: params.result.status,
@@ -541,7 +535,10 @@ export function toVariableMapping(
  * placeholders that preview is filled from, so it is the one block.
  */
 export function toPreview(
-  draft: Pick<TemplateDraftRow, 'body' | 'confirmLabel' | 'cancelLabel'>,
+  draft: Pick<
+    TemplateDraftRow,
+    'body' | 'confirmLabel' | 'cancelLabel' | 'changeLabel' | 'linkLabel'
+  >,
 ) {
   return {
     greeting: '',
@@ -550,5 +547,7 @@ export function toPreview(
     ending: '',
     confirmButton: draft.confirmLabel,
     cancelButton: draft.cancelLabel,
+    ...(draft.changeLabel ? { changeButton: draft.changeLabel } : {}),
+    ...(draft.linkLabel ? { linkButton: draft.linkLabel } : {}),
   };
 }

@@ -22,7 +22,7 @@ const SUBMISSION: TemplateSubmission = {
     { kind: 'quick_reply', text: "I'll receive it" },
     { kind: 'quick_reply', text: "Won't be available" },
     { kind: 'quick_reply', text: 'Change address' },
-    trackingLinkButton('Track order', 'https://getakeed.com', 'named'),
+    trackingLinkButton('Track order', 'https://getakeed.com'),
   ],
 };
 
@@ -35,7 +35,7 @@ const EXPECTED_BUTTONS = {
     {
       type: 'URL',
       text: 'Track order',
-      url: 'https://getakeed.com/t/{{tracking_code}}',
+      url: 'https://getakeed.com/t/{{1}}',
       example: [`https://getakeed.com/t/${TRACKING_LINK_SAMPLE_CODE}`],
     },
   ],
@@ -67,10 +67,7 @@ describe('the Track order link button in Meta syntax', () => {
     expect(model?.buttons.at(-1)).toEqual({
       kind: 'url',
       text: 'Track order',
-      url: [
-        { text: 'https://getakeed.com/t/' },
-        { parameter: 'tracking_code' },
-      ],
+      url: [{ text: 'https://getakeed.com/t/' }, { parameter: '1' }],
     });
     // The link's parameter is not a body parameter: the format stays named.
     expect(model?.format).toBe('named');

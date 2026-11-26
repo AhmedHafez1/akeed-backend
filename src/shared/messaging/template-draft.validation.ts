@@ -213,13 +213,7 @@ export function toTemplateSubmission(
         ? [{ kind: 'quick_reply' as const, text: content.changeLabel }]
         : []),
       ...(content.linkLabel && options.trackingLinkBase
-        ? [
-            trackingLinkButton(
-              content.linkLabel,
-              options.trackingLinkBase,
-              content.parameterFormat,
-            ),
-          ]
+        ? [trackingLinkButton(content.linkLabel, options.trackingLinkBase)]
         : []),
     ],
   };

@@ -23,12 +23,14 @@ import {
   buildBackendLog,
   normalizeError,
 } from '../../shared/logging/backend-log.util';
+import { SHIPPING_SHIPPED_PURPOSE } from '../../shared/messaging/template-registry.types';
 import { templateSampleValues } from '../../shared/messaging/template-rendering';
 import {
   hasSyncedRegistry,
   isSendableTemplate,
   toSelectedTemplate,
 } from '../../shared/messaging/template-selector';
+import { TRACKING_LINK_SAMPLE_CODE } from '../../shared/messaging/tracking-link-button';
 import {
   MESSAGING_PORT,
   type MessagingPort,
@@ -37,6 +39,7 @@ import {
   TEMPLATE_REGISTRY_PORT,
   type TemplateRegistryPort,
 } from '../../shared/ports/template-registry.port';
+import { toSelectedShippingTemplate } from '../../shared/shipping/shipping-template-selector';
 import { templateNotFound } from './admin-template-inspection.service';
 import { WHATSAPP_TEMPLATE_ERROR_CODES } from './whatsapp-template-operator.guard';
 
@@ -111,6 +114,7 @@ export class AdminTemplateTestSendService {
     await this.assertWithinLimits(userId);
 
     const values = templateSampleValues(template.language);
+    const shipped = template.purpose === SHIPPING_SHIPPED_PURPOSE;
     try {
       await this.messaging.sendVerificationTemplate({
         to: phone,
@@ -119,7 +123,17 @@ export class AdminTemplateTestSendService {
         orderNumber: values.order,
         totalPrice: values.total,
         verificationId: randomUUID(),
-        template: toSelectedTemplate(template),
+        template: shipped
+          ? toSelectedShippingTemplate(template)
+          : toSelectedTemplate(template),
+        // The link's sample code belongs to no shipment, so the page it opens
+        // says the link is not available.
+        ...(shipped
+          ? {
+              tracking: values.tracking,
+              trackingCode: TRACKING_LINK_SAMPLE_CODE,
+            }
+          : {}),
         detailValues: {
           items: values.items,
           region: values.region,
