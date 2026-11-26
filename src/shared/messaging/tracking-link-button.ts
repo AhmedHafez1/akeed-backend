@@ -1,5 +1,4 @@
 import type { TemplateSubmissionButton } from './template-draft.types';
-import type { TemplateParameterFormat } from './template-registry.types';
 import type {
   TemplateTextButton,
   TemplateTextSegment,
@@ -11,8 +10,12 @@ import type {
  * approves the template; only the code at the end is filled at send time.
  */
 export const TRACKING_LINK_PATH = '/t/';
-/** The parameter at the end of the link in a named template. */
-export const TRACKING_LINK_NAMED_PARAMETER = 'tracking_code';
+/**
+ * The parameter at the end of the link, in a named template too: a link
+ * button is filled by position only. The provider approves a named one but
+ * keeps it as plain text, so every message would open the same dead link.
+ */
+export const TRACKING_LINK_PARAMETER = '1';
 /** A well-formed sample code for the provider's review. */
 export const TRACKING_LINK_SAMPLE_CODE = 'Xk3pQ9vT2mLr8sYwB4nHcA';
 
@@ -23,19 +26,12 @@ export function trackingLinkStart(base: string): string {
 export function trackingLinkButton(
   label: string,
   base: string,
-  format: TemplateParameterFormat | 'none',
 ): Extract<TemplateSubmissionButton, { kind: 'url' }> {
   const start = trackingLinkStart(base);
   return {
     kind: 'url',
     text: label,
-    url: [
-      { text: start },
-      {
-        parameter:
-          format === 'positional' ? '1' : TRACKING_LINK_NAMED_PARAMETER,
-      },
-    ],
+    url: [{ text: start }, { parameter: TRACKING_LINK_PARAMETER }],
     example: `${start}${TRACKING_LINK_SAMPLE_CODE}`,
   };
 }

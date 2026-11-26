@@ -13,6 +13,7 @@ import {
   syncedApprovedTemplates,
 } from '../../shared/messaging/testing/seeded-template-registry';
 import type { RegistryTemplate } from '../../shared/messaging/template-registry.types';
+import { TRACKING_LINK_SAMPLE_CODE } from '../../shared/messaging/tracking-link-button';
 import type { MessagingPort } from '../../shared/ports/messaging.port';
 import {
   AdminTemplateTestSendService,
@@ -405,5 +406,70 @@ describe('AdminTemplateTestSendService', () => {
         );
       },
     );
+
+    it('fills the Track order link and the tracking line of a Shipped template', async () => {
+      const post = jest.fn(() => of({ data: { messages: [{ id: 'w' }] } }));
+      const whatsapp = new WhatsAppService(
+        { post } as never,
+        {
+          get: (name: string) =>
+            ({ WA_ACCESS_TOKEN: 'token', WA_PHONE_NUMBER_ID: '1' })[name],
+        } as never,
+      );
+      const shipped: RegistryTemplate = {
+        ...syncedApprovedTemplates()[0],
+        key: 'shipping_shipped.en.default_v1',
+        purpose: 'shipping_shipped',
+        language: 'en',
+        isActive: true,
+        parameterFormat: 'named',
+        variables: [{ key: 'tracking', name: 'tracking' }],
+        components: {
+          body: '{{tracking}}',
+          buttons: [
+            { kind: 'quick_reply', text: 'A' },
+            { kind: 'quick_reply', text: 'B' },
+            { kind: 'quick_reply', text: 'C' },
+            {
+              kind: 'url',
+              text: 'Track order',
+              url: 'https://getakeed.com/t/{{1}}',
+            },
+          ],
+        },
+      };
+      const { service } = setup({ messaging: whatsapp, templates: [shipped] });
+
+      await service.send({
+        userId: OPERATOR,
+        key: shipped.key,
+        phone: STAFF_PHONE,
+      });
+
+      const [, payload] = post.mock.calls[0] as unknown as [
+        string,
+        MetaPayload,
+      ];
+      expect(payload.template.components).toEqual(
+        expect.arrayContaining([
+          {
+            type: 'body',
+            parameters: [
+              {
+                type: 'text',
+                parameter_name: 'tracking',
+                text: expect.stringContaining('1Z999AA10123456784') as string,
+              },
+            ],
+          },
+          {
+            type: 'button',
+            sub_type: 'url',
+            index: 3,
+            parameters: [{ type: 'text', text: TRACKING_LINK_SAMPLE_CODE }],
+          },
+        ]),
+      );
+    });
   });
 });

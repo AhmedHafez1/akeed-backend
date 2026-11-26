@@ -18,6 +18,7 @@ import type { AdminTemplateDraftDto } from '../src/modules/admin/dto/admin-templ
 import { TemplateAlertService } from '../src/modules/template-registry/template-alert.service';
 import { TemplateStatusService } from '../src/modules/template-registry/template-status.service';
 import { WhatsappTemplateSyncService } from '../src/modules/template-registry/whatsapp-template-sync.service';
+import { SHIPPING_NOTIFICATIONS_CONFIG } from '../src/shared/config/shipping-notifications.config';
 import { parseWhatsappTemplateConfig } from '../src/shared/config/whatsapp-template.config';
 import { selectTemplateForSend } from '../src/shared/messaging/template-selector';
 import {
@@ -136,6 +137,10 @@ const configValues: Record<string, unknown> = {
     WHATSAPP_TEMPLATE_OPERATIONS_ENABLED: 'true',
     WHATSAPP_TEMPLATE_OPERATOR_IDS: OPERATOR,
   }),
+  [SHIPPING_NOTIFICATIONS_CONFIG]: {
+    enabled: false,
+    trackingLinkBaseUrl: 'https://getakeed.com',
+  },
 };
 const configService = { get: (key: string) => configValues[key] };
 const api = new FakeMetaTemplateApi();
@@ -1284,6 +1289,90 @@ describe('WhatsApp template authoring against PostgreSQL', () => {
         syncRepository.activeStoreCountsByKey([key]),
       ).resolves.toEqual(new Map([[key, 1]]));
       await client`DELETE FROM integrations WHERE id = ${stored.id}`;
+    });
+  });
+
+  describe('a Shipped template', () => {
+    const KEY = 'shipping_shipped.en.default_v1';
+    const text = {
+      body: 'Hello {{customer}}, your order {{order}} from {{store}} is on its way. {{tracking}} Please have {{total}} ready in cash and keep your phone on.',
+      confirm_label: "I'll receive it",
+      cancel_label: "Won't be available",
+      samples: {
+        customer: 'Ahmed',
+        order: 'TEST-1',
+        store: 'Akeed Store',
+        total: '250.00 EGP',
+        tracking: 'Tracking: 1Z999AA10123456784',
+      },
+    };
+    const withLink = new AdminTemplateLifecycleService(
+      lifecycleRepository,
+      catalog,
+      registry,
+      configService as never,
+    );
+
+    const preview = async () =>
+      (await registryRepository.findAll()).find((entry) => entry.key === KEY)
+        ?.preview;
+    const sentLink = () =>
+      (
+        api.writes.at(-1)!.body as {
+          components: { type: string; buttons?: Record<string, unknown>[] }[];
+        }
+      ).components
+        .find((component) => component.type === 'BUTTONS')!
+        .buttons!.at(-1);
+
+    beforeAll(async () => {
+      // 0107 allows the purpose; it also changes tables this suite has none of.
+      await client.unsafe(`
+        ALTER TABLE whatsapp_templates DROP CONSTRAINT IF EXISTS whatsapp_templates_purpose_check;
+        ALTER TABLE whatsapp_template_drafts DROP CONSTRAINT IF EXISTS whatsapp_template_drafts_purpose_check;
+      `);
+    });
+
+    it('keeps both button labels and a link filled by position, on submit and on edit', async () => {
+      const [{ id }] = await client<{ id: string }[]>`
+        INSERT INTO whatsapp_template_drafts
+          ("key", purpose, language, style, version, meta_template_name,
+           meta_language_code, parameter_format, category, body, confirm_label,
+           cancel_label, change_label, link_label, samples, created_by,
+           updated_by)
+        VALUES (${KEY}, 'shipping_shipped', 'en', 'default', 1,
+          'akeed_shipping_shipped_default_v1', 'en', 'named', 'utility',
+          ${text.body}, ${text.confirm_label}, ${text.cancel_label},
+          'Change address', 'Track order',
+          ${JSON.stringify(text.samples)}::jsonb,
+          ${OPERATOR}, ${OPERATOR})
+        RETURNING id`;
+      const link = {
+        type: 'URL',
+        text: 'Track order',
+        url: 'https://getakeed.com/t/{{1}}',
+      };
+      const labels = {
+        changeButton: 'Change address',
+        linkButton: 'Track order',
+      };
+
+      await drafts.submit(OPERATOR, id);
+
+      expect(sentLink()).toMatchObject(link);
+      await expect(preview()).resolves.toMatchObject(labels);
+
+      await setStatus(KEY, 'approved');
+      await client`
+        UPDATE whatsapp_templates SET is_active = false WHERE "key" = ${KEY}`;
+      await withLink.edit({
+        userId: OPERATOR,
+        key: KEY,
+        dto: { ...text, samples: { ...text.samples, order: 'TEST-2' } },
+      });
+
+      expect(sentLink()).toMatchObject(link);
+      await expect(preview()).resolves.toMatchObject(labels);
     });
   });
 

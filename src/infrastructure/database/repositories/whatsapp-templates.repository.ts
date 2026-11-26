@@ -132,6 +132,7 @@ export function toRegistryTemplate(row: WhatsappTemplateRow): RegistryTemplate {
       ...(row.preview.changeButton
         ? { changeButton: row.preview.changeButton }
         : {}),
+      ...(row.preview.linkButton ? { linkButton: row.preview.linkButton } : {}),
     },
     isActive: row.isActive,
     isDefault: row.isDefault,

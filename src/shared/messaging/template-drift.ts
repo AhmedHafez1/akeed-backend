@@ -8,6 +8,11 @@ import {
   providerParameterOf,
   variablesByParameter,
 } from './template-rendering';
+import {
+  TRACKING_LINK_PARAMETER,
+  TRACKING_LINK_PATH,
+  findLinkButtonSlot,
+} from './tracking-link-button';
 import type {
   TemplateMessageLines,
   TemplateTextModel,
@@ -101,6 +106,14 @@ function providerText(
   );
 }
 
+function linkText(segments: readonly TemplateTextSegment[]): string {
+  return segments
+    .map((segment) =>
+      'text' in segment ? segment.text : `{{${segment.parameter}}}`,
+    )
+    .join('');
+}
+
 /**
  * Compares a registry template with the provider's copy of it. Akeed fills
  * the template's variables and two quick-reply buttons (confirm first, cancel
@@ -179,17 +192,35 @@ export function compareTemplateDrift(params: {
       registered: expectedKinds.join(', '),
       provider: model.buttons.map((button) => button.kind).join(', '),
     });
-  } else if (
-    previewsRegistered &&
-    (confirm.text !== template.preview.confirmButton ||
-      cancel.text !== template.preview.cancelButton)
-  ) {
-    differences.push({
-      kind: 'button_labels',
-      severity: 'preview',
-      registered: `${template.preview.confirmButton} | ${template.preview.cancelButton}`,
-      provider: `${confirm.text} | ${cancel.text}`,
-    });
+  } else {
+    // The Track order link must end in the value Akeed fills. A link held as
+    // fixed text opens the same page for every order.
+    const link = expectedKinds.includes('url')
+      ? findLinkButtonSlot(model.buttons)
+      : null;
+    if (
+      link &&
+      (link.parameter === null || !link.start.endsWith(TRACKING_LINK_PATH))
+    ) {
+      differences.push({
+        kind: 'buttons',
+        severity: 'send',
+        registered: `url ${TRACKING_LINK_PATH}{{${TRACKING_LINK_PARAMETER}}}`,
+        provider: `url ${linkText(model.buttons[link.index].url ?? [])}`,
+      });
+    }
+    if (
+      previewsRegistered &&
+      (confirm.text !== template.preview.confirmButton ||
+        cancel.text !== template.preview.cancelButton)
+    ) {
+      differences.push({
+        kind: 'button_labels',
+        severity: 'preview',
+        registered: `${template.preview.confirmButton} | ${template.preview.cancelButton}`,
+        provider: `${confirm.text} | ${cancel.text}`,
+      });
+    }
   }
 
   const registered = registeredText(template);
