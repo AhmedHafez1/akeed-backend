@@ -47,6 +47,8 @@ export interface SenderHealthResult {
   failure?: SenderFailure;
   /** Meta's explanation of a LIMITED status, for support. */
   limitations?: string[];
+  /** What Meta reports as blocked (entity, code, short reason), for support. */
+  blockers?: { entity: string; code: string; reason?: string }[];
   qualityRating?: string | null;
   nameStatus?: string | null;
 }

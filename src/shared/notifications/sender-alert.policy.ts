@@ -107,7 +107,7 @@ export function senderAlerts(
         : restricted
           ? 'restricted'
           : 'sender_unavailable',
-      credentials ? 'reconnect' : restricted ? 'whatsapp_manager' : 'none',
+      credentials ? 'reconnect' : 'none',
     );
   }
   return result;

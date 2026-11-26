@@ -707,7 +707,7 @@ describe('merchant sender recovery on disposable PostgreSQL', () => {
     },
   );
   it.each(['credentials', 'payment', 'restricted'] as const)(
-    'health recovery preserves credentials and clears %s only on AVAILABLE',
+    'health recovery of %s: LIMITED clears only restricted, AVAILABLE all but credentials',
     async (degraded) => {
       const f = await fixture('standalone');
       await db
@@ -719,11 +719,14 @@ describe('merchant sender recovery on disposable PostgreSQL', () => {
         f.connection.id,
         1,
       );
-      // LIMITED neither clears a degradation nor activates a degraded number.
+      // LIMITED can send: it clears a restriction, but credentials and
+      // payment wait for AVAILABLE.
       const limited = await connections.completeHealth(claim, {
         status: 'LIMITED',
       });
-      expect(limited.degradedClass).toBe(degraded);
+      expect(limited.degradedClass).toBe(
+        degraded === 'restricted' ? null : degraded,
+      );
       expect(limited.state).toBe('active');
       await db
         .update(whatsappConnections)
