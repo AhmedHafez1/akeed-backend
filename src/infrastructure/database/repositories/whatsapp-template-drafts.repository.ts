@@ -109,6 +109,7 @@ export function toDraftContent(row: TemplateDraftRow): TemplateDraftContent {
     confirmLabel: row.confirmLabel,
     cancelLabel: row.cancelLabel,
     changeLabel: row.changeLabel,
+    linkLabel: row.linkLabel,
     changeRequestOfKey: row.changeRequestOfKey,
     samples: row.samples,
   };
@@ -494,6 +495,7 @@ export class WhatsappTemplateDraftsRepository {
               ...(current.changeLabel
                 ? { changeButton: current.changeLabel }
                 : {}),
+              ...(current.linkLabel ? { linkButton: current.linkLabel } : {}),
             },
             changeRequestOfKey: current.changeRequestOfKey,
             metaTemplateId: params.result.providerTemplateId,

@@ -66,6 +66,7 @@ import type {
   ShippingFailureReason,
   ShippingNotificationStatus,
   ShippingStage,
+  ShippingTrackingLinkKind,
   ShippingTrigger,
 } from '../../shared/shipping/shipping-notification.types';
 import type {
@@ -393,6 +394,8 @@ export const whatsappTemplateDrafts = pgTable(
     confirmLabel: text('confirm_label').notNull(),
     cancelLabel: text('cancel_label').notNull(),
     changeLabel: text('change_label'),
+    /** The Shipped message's Track order link button label. */
+    linkLabel: text('link_label'),
     changeRequestOfKey: text('change_request_of_key'),
     samples: jsonb('samples')
       .$type<Partial<Record<TemplateVariableKey, string>>>()
@@ -438,6 +441,10 @@ export const whatsappTemplateDrafts = pgTable(
       sql`${table.language} IN ('ar', 'en', 'ur', 'es', 'fr', 'tr')`,
     ),
     check('whatsapp_template_drafts_version_check', sql`${table.version} >= 1`),
+    check(
+      'whatsapp_template_drafts_link_label_check',
+      sql`${table.linkLabel} IS NULL OR char_length(${table.linkLabel}) BETWEEN 1 AND 25`,
+    ),
     check(
       'whatsapp_template_drafts_parameter_format_check',
       sql`${table.parameterFormat} IN ('named', 'positional')`,
@@ -4627,6 +4634,17 @@ export const verificationShippingNotifications = pgTable(
     matchedTag: text('matched_tag'),
     trackingNumber: text('tracking_number'),
     trackingUrl: text('tracking_url'),
+    trackingCompany: text('tracking_company'),
+    /** The random ending of the Track order short link; unique. */
+    trackingCode: text('tracking_code'),
+    /** What the link opens, recorded once at the first send. */
+    trackingLinkKind:
+      text('tracking_link_kind').$type<ShippingTrackingLinkKind>(),
+    /** The first time the customer opened the link. */
+    trackingOpenedAt: timestamp('tracking_opened_at', {
+      withTimezone: true,
+      mode: 'string',
+    }),
     status: text('status')
       .$type<ShippingNotificationStatus>()
       .default('pending')
@@ -4659,6 +4677,21 @@ export const verificationShippingNotifications = pgTable(
     unique('verification_shipping_notifications_stage_key').on(
       table.verificationId,
       table.stage,
+    ),
+    unique('verification_shipping_notifications_tracking_code_key').on(
+      table.trackingCode,
+    ),
+    check(
+      'verification_shipping_notifications_tracking_company_check',
+      sql`${table.trackingCompany} IS NULL OR char_length(${table.trackingCompany}) BETWEEN 1 AND 100`,
+    ),
+    check(
+      'verification_shipping_notifications_tracking_code_check',
+      sql`${table.trackingCode} IS NULL OR ${table.trackingCode} ~ '^[A-Za-z0-9_-]{22,43}$'`,
+    ),
+    check(
+      'verification_shipping_notifications_tracking_link_kind_check',
+      sql`${table.trackingLinkKind} IS NULL OR ${table.trackingLinkKind} IN ('carrier_link', 'courier_page', 'number_only', 'none')`,
     ),
     foreignKey({
       columns: [table.verificationId, table.orgId],

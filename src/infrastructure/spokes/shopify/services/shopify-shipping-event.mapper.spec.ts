@@ -114,6 +114,27 @@ describe('Shopify tracking', () => {
     ).toEqual({ number: 'N1' });
   });
 
+  it('keeps the carrier name on one line, bounded', () => {
+    expect(
+      readShopifyTracking(
+        order({
+          fulfillments: [
+            { tracking_number: 'N1', tracking_company: '  J&T \n Express ' },
+          ],
+        }),
+      ),
+    ).toEqual({ number: 'N1', company: 'J&T Express' });
+    expect(
+      readShopifyTracking(
+        order({
+          fulfillments: [
+            { tracking_number: 'N1', tracking_company: 'x'.repeat(101) },
+          ],
+        }),
+      ),
+    ).toEqual({ number: 'N1' });
+  });
+
   it('has no tracking when nothing is usable', () => {
     expect(
       readShopifyTracking(

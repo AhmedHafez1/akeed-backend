@@ -11,6 +11,7 @@ const SHIPPED_FULFILLMENT_STATUSES = new Set(['fulfilled', 'partial']);
 const VOID_FULFILLMENT_STATUSES = new Set(['cancelled', 'error', 'failure']);
 const TRACKING_NUMBER_MAX_LENGTH = 255;
 const TRACKING_URL_MAX_LENGTH = 2048;
+const TRACKING_COMPANY_MAX_LENGTH = 100;
 
 type Raw = Record<string, unknown>;
 
@@ -78,6 +79,14 @@ export function isShopifyOrderFulfilled(raw: Raw): boolean {
   return fulfillmentsOf(raw).some(isLiveFulfillment);
 }
 
+/** The carrier's name on one line, or nothing when it is too long. */
+function trackingCompany(value: unknown): string | null {
+  const company = text(value)?.replace(/\s+/g, ' ') ?? null;
+  return company && [...company].length <= TRACKING_COMPANY_MAX_LENGTH
+    ? company
+    : null;
+}
+
 /**
  * Tracking from the first live fulfillment that has a number or a link. Each
  * field reads both Shopify spellings: the single value and the list.
@@ -95,9 +104,11 @@ export function readShopifyTracking(raw: Raw): ShippingTracking | undefined {
         ? number
         : null;
     if (safeNumber || url) {
+      const company = trackingCompany(fulfillment.tracking_company);
       return {
         ...(safeNumber ? { number: safeNumber } : {}),
         ...(url ? { url } : {}),
+        ...(company ? { company } : {}),
       };
     }
   }
@@ -110,6 +121,7 @@ const STORED_FULFILLMENT_FIELDS = [
   'tracking_numbers',
   'tracking_url',
   'tracking_urls',
+  'tracking_company',
 ] as const;
 
 /**

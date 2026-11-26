@@ -51,6 +51,9 @@ export function describeMetaComponents(
     ...(header ? { header } : {}),
     body,
     ...(footer ? { footer } : {}),
-    buttons: snapshot.buttons.map((button) => ({ ...button })),
+    buttons: snapshot.buttons.map(({ url, ...button }) => ({
+      ...button,
+      ...(url !== undefined ? { url: toSegments(url) } : {}),
+    })),
   };
 }

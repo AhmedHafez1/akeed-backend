@@ -412,17 +412,31 @@ When a merchant connects their own number, Akeed submits the registry's live tex
 - **Where to look.** `GET /api/admin/whatsapp-connections/:orgId` lists the setup status and each template with its status, last error code, next retry and drift. Setup in `exhausted` needs you; `failed` retries on its own at the time shown.
 - **The list is the truth.** A merchant template webhook only writes a hint and queues a sync of that account a minute later. The 6-hour sync covers the rest.
 - **Drift.** `registry_edited`: the registry text changed after Akeed submitted it. `provider_differs`: the merchant's account holds other text under the same name and language. Akeed never overwrites, deletes or resubmits either; new text is a new template in the registry, as for Akeed's own account.
-- **Out of retries.** `exhausted` with a code such as `character_limit` means Meta refused the text; `incompatible` means the text cannot be copied (for example `text_header` or `non_quick_reply_button`). Neither is sent again on its own.
+- **Out of retries.** `exhausted` with a code such as `character_limit` means Meta refused the text; `incompatible` means the text cannot be copied (for example `text_header`, or `non_quick_reply_button` for a phone or copy-code button; quick replies and one link button are copied as the provider holds them). Neither is sent again on its own.
 - **Not ready means not used.** Only `approved` with category `utility` counts as ready. Pending, rejected, paused or recategorized templates are never treated as ready.
 - **Image twins** are not provisioned to merchant accounts.
 
 ## 13. Shipped message templates
 
-Purpose `shipping_shipped`, utility category, Meta name `akeed_shipping_shipped_default_v1` in every language, named parameters `customer`, `order`, `store`, `tracking` and `total`. The message asks the customer to have the total ready in cash and to keep the phone on for the courier. Three quick replies in a fixed order: confirm label ("I'll receive it", recorded only), cancel label ("Won't be available") and change label ("Change address"). The last two put the order in needs action.
+Purpose `shipping_shipped`, utility category, Meta name `akeed_shipping_shipped_default_v1` in every language, named parameters `customer`, `order`, `store`, `tracking` and `total`. The message asks the customer to have the total ready in cash and to keep the phone on for the courier. Three quick replies in a fixed order: confirm label ("I'll receive it", recorded only), cancel label ("Won't be available") and change label ("Change address"). The last two put the order in needs action. After them, one link button, **Track order** (the draft's link label, 25 characters at most; only Shipped drafts may have one).
 
 - All six languages (Arabic, English, Urdu, Spanish, French and Turkish) are seeded as drafts `shipping_shipped.<lang>.default_v1` under **Admin › Templates › Drafts**. Staff review, save and submit each one, then follow the steps in section 9: sync until approved, activate, send a test and make it the default. Until a language has an approved active default, nothing sends it, whatever the guardrail setting.
-- The `{{tracking}}` value is filled by Akeed, never empty: the tracking number and link, or a sentence saying the courier will make contact when the order has none. A carrier link in the text is tappable in WhatsApp; there is no tracking button.
-- Own-number sends use the merchant's copy of the same template, provisioned like the others; while it is not approved there, the message goes from Akeed's number.
+- The `{{tracking}}` value is filled by Akeed, never empty: the tracking number, or a sentence saying the courier will make contact when the order has none. The carrier link is never in the text; the button opens it.
+- **The link button.** Submitting a Shipped draft writes the link `<SHIPPING_TRACKING_LINK_BASE_URL>/t/{{tracking_code}}` with a sample ending as its example. Without that variable set, submit and edit are refused with `WHATSAPP_TEMPLATE_TRACKING_LINK_UNCONFIGURED`. Meta fixes the start of the link on approval: **changing `SHIPPING_TRACKING_LINK_BASE_URL` later does not change approved templates**, and their buttons keep opening the old origin until new versions are submitted and approved. Keep the old origin serving `/t/` until then. At send time Akeed fills the ending with the shipment's code at the button's index, read from the template as the provider holds it.
+- Drift: a Shipped template must hold three quick replies and, when its draft had a link label, the link button after them; anything else is `buttons` drift. Image twins are never made for it.
+- Own-number sends use the merchant's copy of the same template, provisioned like the others, link button included (copied with the link the provider holds); while it is not approved there, the message goes from Akeed's number.
+- **Coverage of the button.** After the first weeks, run against the production database (read-only):
+
+  ```sql
+  SELECT coalesce(tracking_link_kind, 'not_sent') AS opens,
+         count(*) AS shipments,
+         count(tracking_opened_at) AS opened
+  FROM verification_shipping_notifications
+  WHERE status IN ('sent', 'delivered', 'read')
+  GROUP BY 1 ORDER BY 2 DESC;
+  ```
+
+  `carrier_link` is a link from Shopify, `courier_page` a page built from a known courier and the number, `number_only` Akeed's page with the number, `none` Akeed's page with nothing to track.
 - The thank-you after a tap is the free-form text `ack_shipping`, edited with the other message texts.
 
 ## Merchant thank-you messages

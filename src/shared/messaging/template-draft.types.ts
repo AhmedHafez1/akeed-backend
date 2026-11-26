@@ -43,6 +43,8 @@ export interface TemplateDraftContent {
   confirmLabel: string;
   cancelLabel: string;
   changeLabel?: string | null;
+  /** The Shipped message's Track order link button label. */
+  linkLabel?: string | null;
   changeRequestOfKey?: string | null;
   samples: TemplateDraftSamples;
 }
@@ -66,7 +68,8 @@ export type TemplateDraftField =
   | 'buttons'
   | 'confirm_label'
   | 'cancel_label'
-  | 'change_label';
+  | 'change_label'
+  | 'link_label';
 
 /**
  * One validation finding. `rule` is stable and translated by the UI;
@@ -101,9 +104,26 @@ export interface TemplateSubmission {
   body: TemplateTextSegment[];
   /** A sample value for each provider parameter, in first-use order. */
   samples: { parameter: string; sample: string }[];
-  /** Quick replies in send order: the first is index 0 at send time. */
-  buttons: { kind: 'quick_reply'; text: string }[];
+  /**
+   * Quick replies in send order (the first is index 0 at send time), then at
+   * most one link button.
+   */
+  buttons: TemplateSubmissionButton[];
 }
+
+/**
+ * A button as the provider is asked to create it. A link button's `url` is
+ * a fixed start and, optionally, one parameter at the end filled at send
+ * time; `example` is the whole link with a sample ending.
+ */
+export type TemplateSubmissionButton =
+  | { kind: 'quick_reply'; text: string }
+  | {
+      kind: 'url';
+      text: string;
+      url: TemplateTextSegment[];
+      example: string;
+    };
 
 /** What can change in an edit: the text. Name, language and format cannot. */
 export type TemplateEditSubmission = Pick<
@@ -133,7 +153,7 @@ export interface TemplateCopySubmission {
   body: TemplateTextSegment[];
   footer?: TemplateTextSegment[];
   samples: { parameter: string; sample: string }[];
-  buttons: { kind: 'quick_reply'; text: string }[];
+  buttons: TemplateSubmissionButton[];
 }
 
 export interface TemplateSubmissionResult {

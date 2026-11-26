@@ -134,6 +134,8 @@ export interface TemplatePreview {
   confirmButton: string;
   cancelButton: string;
   changeButton?: string;
+  /** The Shipped message's Track order link button. */
+  linkButton?: string;
 }
 
 /**

@@ -16,6 +16,7 @@ import {
   type TemplateSubmission,
 } from './template-draft.types';
 import type { TemplateTextSegment } from './template-text.types';
+import { trackingLinkButton } from './tracking-link-button';
 
 /**
  * The rules a staff-written template must pass before it is sent to the
@@ -172,7 +173,11 @@ export function fillDraftBody(
     .join('');
 }
 
-/** A draft in the neutral shape the provider port takes. */
+/**
+ * A draft in the neutral shape the provider port takes. A draft with a link
+ * label gets its Track order button only when the link's start is given:
+ * validation leaves it out, a submit passes it.
+ */
 export function toTemplateSubmission(
   content: TemplateDraftContent,
   variables: readonly TemplateDraftVariable[] = deriveDraftVariables(
@@ -180,6 +185,7 @@ export function toTemplateSubmission(
     content.parameterFormat,
     content.samples,
   ),
+  options: { trackingLinkBase?: string | null } = {},
 ): TemplateSubmission {
   const parameterOf = new Map(variables.map((v) => [v.key, v.parameter]));
   const body: TemplateTextSegment[] = parseDraftBody(content.body).map(
@@ -205,6 +211,15 @@ export function toTemplateSubmission(
       { kind: 'quick_reply', text: content.cancelLabel },
       ...(content.changeLabel
         ? [{ kind: 'quick_reply' as const, text: content.changeLabel }]
+        : []),
+      ...(content.linkLabel && options.trackingLinkBase
+        ? [
+            trackingLinkButton(
+              content.linkLabel,
+              options.trackingLinkBase,
+              content.parameterFormat,
+            ),
+          ]
         : []),
     ],
   };
@@ -431,12 +446,20 @@ export function validateButtons(
   ) {
     issues.push(error('buttons', 'button_labels_identical', 'akeed'));
   }
+  // The quick replies first; at most one link button, after them.
+  const quickReplies = buttons.filter(
+    (button) => button.kind === 'quick_reply',
+  );
+  const others = buttons.slice(quickReplies.length);
   if (
-    buttons.length !== expected.length ||
-    buttons.some((button) => button.kind !== 'quick_reply')
+    quickReplies.length !== expected.length ||
+    others.length > 1 ||
+    others.some((button) => button.kind !== 'url')
   ) {
     issues.push(error('buttons', 'button_count', '4.7.8'));
-  } else if (buttons.some((button, index) => button.text !== expected[index])) {
+  } else if (
+    quickReplies.some((button, index) => button.text !== expected[index])
+  ) {
     issues.push(error('buttons', 'button_order', '4.7.6'));
   }
   return issues;
@@ -444,11 +467,21 @@ export function validateButtons(
 
 /**
  * The Shipped message: three quick replies (I'll be home, Reschedule, Change
- * address, the last in the change label) and a tracking line. It has no
- * two-button predecessor to link to.
+ * address, the last in the change label), the Track order link button after
+ * them and a tracking line. It has no two-button predecessor to link to.
  */
 function validateShippingDraft(content: TemplateDraftContent): Issue[] {
   const issues: Issue[] = [];
+  const linkLabel = content.linkLabel?.trim() ?? '';
+  if (!linkLabel)
+    issues.push(error('link_label', 'button_label_required', '4.7.5'));
+  else if (
+    [...linkLabel].length > TEMPLATE_BUTTON_LABEL_MAX_LENGTH ||
+    [content.confirmLabel, content.cancelLabel, content.changeLabel].some(
+      (label) => label?.trim() === linkLabel,
+    )
+  )
+    issues.push(error('link_label', 'button_label_too_long', '4.7.2'));
   if (content.changeRequestOfKey)
     issues.push(error('change_label', 'change_link_required', 'akeed'));
   if (!content.changeLabel?.trim())
@@ -497,6 +530,9 @@ export function validateTemplateDraft(
     ...(content.purpose !== SHIPPING_SHIPPED_PURPOSE &&
     draftVariableKeys(content.body).includes('tracking')
       ? [error('body', 'variable_unknown', 'akeed')]
+      : []),
+    ...(content.purpose !== SHIPPING_SHIPPED_PURPOSE && content.linkLabel
+      ? [error('link_label', 'link_button_not_allowed', 'akeed')]
       : []),
   ];
   return {

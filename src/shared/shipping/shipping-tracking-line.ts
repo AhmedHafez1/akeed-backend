@@ -2,7 +2,9 @@ import type { TemplateLanguage } from '../messaging/template-registry.types';
 import type { ShippingTracking } from './shipping-notification.types';
 
 /**
- * The `{{tracking}}` line of the Shipped message. The provider refuses an
+ * The `{{tracking}}` line of the Shipped message: the tracking number only,
+ * because the message's Track order button opens the carrier's page. The
+ * provider refuses an
  * empty parameter, so an order without tracking gets a fixed sentence instead.
  * The provider also refuses line breaks and long runs of spaces in a
  * parameter, so the values are collapsed onto one line.
@@ -33,11 +35,9 @@ function oneLine(value: string | null | undefined): string {
 
 export function shippingTrackingLine(
   language: TemplateLanguage,
-  tracking: ShippingTracking | null | undefined,
+  tracking: Pick<ShippingTracking, 'number'> | null | undefined,
 ): string {
-  const parts = [oneLine(tracking?.number), oneLine(tracking?.url)].filter(
-    (part) => part.length > 0,
-  );
-  if (!parts.length) return NO_TRACKING_LINE[language];
-  return `${TRACKING_PREFIX[language]} ${parts.join(' – ')}`;
+  const number = oneLine(tracking?.number);
+  if (!number) return NO_TRACKING_LINE[language];
+  return `${TRACKING_PREFIX[language]} ${number}`;
 }

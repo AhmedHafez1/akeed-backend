@@ -54,7 +54,8 @@ export type TemplateComponentsSnapshot =
       headerImage?: true;
       body: string;
       footer?: string;
-      buttons: { kind: TemplateButtonKind; text: string }[];
+      /** A link button keeps its link in the provider's syntax. */
+      buttons: { kind: TemplateButtonKind; text: string; url?: string }[];
     }
   | { unknown: true };
 

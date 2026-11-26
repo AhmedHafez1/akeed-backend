@@ -101,7 +101,13 @@ describe('Meta template mapping', () => {
             buttons: [
               { type: 'QUICK_REPLY', text: 'Yes' },
               { type: 'quick_reply', text: 'No' },
-              { type: 'URL', text: 'Track', url: 'https://example.test' },
+              {
+                type: 'URL',
+                text: 'Track',
+                url: 'https://example.test/t/{{tracking_code}}',
+              },
+              { type: 'PHONE_NUMBER', text: 'Call' },
+              { type: 'COPY_CODE', text: 'Copy' },
             ],
           },
         ]),
@@ -112,7 +118,13 @@ describe('Meta template mapping', () => {
         buttons: [
           { kind: 'quick_reply', text: 'Yes' },
           { kind: 'quick_reply', text: 'No' },
-          { kind: 'other', text: 'Track' },
+          {
+            kind: 'url',
+            text: 'Track',
+            url: 'https://example.test/t/{{tracking_code}}',
+          },
+          { kind: 'phone', text: 'Call' },
+          { kind: 'other', text: 'Copy' },
         ],
       });
     });

@@ -82,6 +82,7 @@ class InMemoryDrafts {
       id: randomUUID(),
       changeRequestOfKey: null,
       changeLabel: null,
+      linkLabel: null,
       key: buildDraftKey(input.purpose, input.language, input.style, version),
       purpose: input.purpose,
       language: input.language,

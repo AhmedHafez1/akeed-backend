@@ -1,4 +1,6 @@
 import { customerButtonPayload } from '../../../shared/messaging/change-request-messaging';
+import { findLinkButtonSlot } from '../../../shared/messaging/tracking-link-button';
+import { describeMetaComponents } from './meta-template-text';
 import {
   MetaSendContextService,
   type MetaSendContext,
@@ -89,6 +91,39 @@ export class WhatsAppService {
   }
 
   /** Confirm, Cancel and, on a change template, Change, in send order. */
+  /**
+   * The link button's parameter: the end of its link, at the button's own
+   * index in the template as the provider holds it. A named template's link
+   * carries its parameter name. Nothing when the template has no link button
+   * or the link is fixed.
+   */
+  private linkButtonParameter(
+    template: SelectedCodTemplate,
+    code: string | undefined,
+  ): Record<string, unknown>[] {
+    if (!code) return [];
+    const slot = findLinkButtonSlot(
+      describeMetaComponents(template.components ?? null)?.buttons ?? [],
+    );
+    if (!slot?.parameter) return [];
+    return [
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: slot.index,
+        parameters: [
+          {
+            type: 'text',
+            ...(/^\d+$/.test(slot.parameter)
+              ? {}
+              : { parameter_name: slot.parameter }),
+            text: code,
+          },
+        ],
+      },
+    ];
+  }
+
   private confirmationButtons(
     template: SelectedCodTemplate,
     params: { verificationId: string; confirmationCycle?: number },
@@ -180,6 +215,7 @@ export class WhatsAppService {
     detailValues?: OrderDetailValues;
     tracking?: string;
     buttonPayloads?: readonly string[];
+    trackingCode?: string;
   }): Promise<WhatsAppResponse & { template: SentTemplateIdentity }> {
     const { template } = params;
     if (params.sender?.kind === 'merchant_own' && !this.sendContext)
@@ -226,6 +262,7 @@ export class WhatsAppService {
       };
     });
 
+    const linkButton = this.linkButtonParameter(template, params.trackingCode);
     const buildPayload = (
       name: string,
       languageCode: string,
@@ -267,6 +304,7 @@ export class WhatsAppService {
                 parameters: [{ type: 'payload', payload }],
               }))
             : this.confirmationButtons(template, params)),
+          ...linkButton,
         ],
       },
     });

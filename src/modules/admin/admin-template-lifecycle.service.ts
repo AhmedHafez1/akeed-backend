@@ -4,8 +4,12 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
+  ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { readShippingNotificationsConfig } from '../../shared/config/shipping-notifications.config';
 import { toDraftContent } from '../../infrastructure/database/repositories/whatsapp-template-drafts.repository';
 import {
   WhatsappTemplateLifecycleRepository,
@@ -164,7 +168,25 @@ export class AdminTemplateLifecycleService {
     private readonly catalog: TemplateCatalogPort,
     @Inject(TEMPLATE_REGISTRY_PORT)
     private readonly registry: TemplateRegistryPort,
+    @Optional() private readonly config?: ConfigService,
   ) {}
+
+  /** An edit resends every button, so a link button needs its origin. */
+  private trackingLinkBase(): string | null {
+    return this.config
+      ? (readShippingNotificationsConfig(this.config).trackingLinkBaseUrl ??
+          null)
+      : null;
+  }
+
+  private trackingLinkUnconfigured(): ServiceUnavailableException {
+    return new ServiceUnavailableException({
+      statusCode: 503,
+      error: 'Service Unavailable',
+      message: 'The Track order link origin is not configured.',
+      code: WHATSAPP_TEMPLATE_ERROR_CODES.trackingLinkUnconfigured,
+    });
+  }
 
   /** What an action on this template would touch, for the confirmation. */
   async impact(key: string): Promise<AdminTemplateImpactView> {
@@ -285,11 +307,18 @@ export class AdminTemplateLifecycleService {
       await finish('refused', { errorCode: 'invalid' });
       throw this.invalid(validation.issues);
     }
+    const trackingLinkBase = content.linkLabel ? this.trackingLinkBase() : null;
+    if (content.linkLabel && !trackingLinkBase) {
+      await finish('refused', { errorCode: 'tracking_link_unconfigured' });
+      throw this.trackingLinkUnconfigured();
+    }
 
     try {
       await this.catalog.editTemplate(
         template.providerTemplateId,
-        toTemplateSubmission(content, validation.variables),
+        toTemplateSubmission(content, validation.variables, {
+          trackingLinkBase,
+        }),
       );
     } catch (error) {
       const failure =

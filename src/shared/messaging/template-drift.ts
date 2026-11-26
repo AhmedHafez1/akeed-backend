@@ -1,5 +1,8 @@
 import type { TemplateReviewStatus } from './template-provider.types';
-import type { RegistryTemplate } from './template-registry.types';
+import {
+  SHIPPING_SHIPPED_PURPOSE,
+  type RegistryTemplate,
+} from './template-registry.types';
 import {
   previewBlocks,
   providerParameterOf,
@@ -151,21 +154,29 @@ export function compareTemplateDrift(params: {
     });
   }
 
+  // The Shipped message has three quick replies and, when registered with
+  // one, the Track order link button after them; a change-request template
+  // has a third quick reply; any other has two.
+  const shipped = template.purpose === SHIPPING_SHIPPED_PURPOSE;
+  const expectedKinds = [
+    'quick_reply',
+    'quick_reply',
+    ...(shipped || template.changeRequestOfKey ? ['quick_reply'] : []),
+    ...(shipped && template.preview.linkButton ? ['url'] : []),
+  ];
   const [confirm, cancel] = model.buttons;
   const twoQuickReplies =
-    model.buttons.length === (template.changeRequestOfKey ? 3 : 2) &&
+    model.buttons.length === expectedKinds.length &&
+    model.buttons.every(
+      (button, index) => button.kind === expectedKinds[index],
+    ) &&
     (!template.changeRequestOfKey ||
-      (model.buttons[2]?.kind === 'quick_reply' &&
-        model.buttons[2].text === template.preview.changeButton)) &&
-    confirm?.kind === 'quick_reply' &&
-    cancel?.kind === 'quick_reply';
-  if (!twoQuickReplies) {
+      model.buttons[2]?.text === template.preview.changeButton);
+  if (!twoQuickReplies || !confirm || !cancel) {
     differences.push({
       kind: 'buttons',
       severity: 'send',
-      registered: template.changeRequestOfKey
-        ? 'quick_reply, quick_reply, quick_reply'
-        : 'quick_reply, quick_reply',
+      registered: expectedKinds.join(', '),
       provider: model.buttons.map((button) => button.kind).join(', '),
     });
   } else if (

@@ -366,7 +366,12 @@ export function messageLinesFromProvider(
       segmentsOf(model.body),
       segmentsOf(model.footer),
     ]),
-    buttons: model.buttons.map((button) => button.text),
+    buttons: model.buttons
+      .filter((button) => button.kind !== 'url')
+      .map((button) => button.text),
+    ...linkButtonOf(
+      model.buttons.find((button) => button.kind === 'url')?.text,
+    ),
     direction: templateDirection(template.language),
     source: 'provider',
   };
@@ -394,7 +399,12 @@ export function messageLinesFromRegistered(
   return {
     lines: toLines(previewBlocks(template.preview).map(segmentsOf)),
     buttons: [template.preview.confirmButton, template.preview.cancelButton],
+    ...linkButtonOf(template.preview.linkButton),
     direction: templateDirection(template.language),
     source: 'registered',
   };
+}
+
+function linkButtonOf(label: string | undefined): { linkButton?: string } {
+  return label ? { linkButton: label } : {};
 }

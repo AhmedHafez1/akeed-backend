@@ -1,3 +1,4 @@
+import type { TemplateComponentsSnapshot } from './template-provider.types';
 import type {
   TemplateLanguage,
   TemplateParameterFormat,
@@ -44,6 +45,11 @@ export interface SelectedCodTemplate extends SentTemplateIdentity {
    * text template once when the provider refuses the image.
    */
   imageHeader?: ImageHeaderSend;
+  /**
+   * The provider's synced text, carried only where the sender needs the
+   * buttons it holds (the Shipped message's link button).
+   */
+  components?: TemplateComponentsSnapshot | null;
 }
 
 /** The twin to send and the public https URL of its header image. */

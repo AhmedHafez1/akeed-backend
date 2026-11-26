@@ -35,6 +35,7 @@ import {
   type ShippingEventSource,
 } from './shipping-event-source';
 import { evaluateShippingEligibility } from './shipping-eligibility.policy';
+import { generateShippingTrackingCode } from '../../shared/shipping/shipping-tracking-code';
 
 export interface StoreOrderUpdate {
   platform: PlatformType;
@@ -142,6 +143,9 @@ export class ShippingNotificationsService {
       matchedTag: detection.trigger === 'tag' ? detection.matchedTag : null,
       trackingNumber: detection.tracking?.number ?? null,
       trackingUrl: detection.tracking?.url ?? null,
+      trackingCompany: detection.tracking?.company ?? null,
+      // Kept only when this insert wins; an earlier record keeps its own code.
+      trackingCode: generateShippingTrackingCode(),
       status: eligibility.status,
       reasonCode: eligibility.status === 'failed' ? eligibility.reason : null,
     });

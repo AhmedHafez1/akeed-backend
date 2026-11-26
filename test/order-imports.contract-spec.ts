@@ -292,10 +292,11 @@ describe('order imports PostgreSQL contract', () => {
     // 0081 backfills from credit accounts, which this base does not have.
     const appliesToBase = (migration: string, statement: string) =>
       // Free-plan claims have their own billing contracts and are absent here,
-      // and 0107 and 0108 (shipping messages) change no store column.
+      // and 0107, 0108 and 0109 (shipping messages) change no store column.
       migration.startsWith('0102_') ||
       migration.startsWith('0107_') ||
-      migration.startsWith('0108_')
+      migration.startsWith('0108_') ||
+      migration.startsWith('0109_')
         ? false
         : // The base has no installation lifecycles; the plan-notice and admin
           // signal contracts apply the complete migrations. Only 0098's webhook
@@ -424,6 +425,7 @@ describe('order imports PostgreSQL contract', () => {
         '0106_shipping_notifications.sql',
         '0107_shipping_sending.sql',
         '0108_shipping_template_drafts.sql',
+        '0109_shipping_track_button.sql',
       ]) {
         for (const statement of readFileSync(
           resolve(__dirname, '../drizzle', migration),

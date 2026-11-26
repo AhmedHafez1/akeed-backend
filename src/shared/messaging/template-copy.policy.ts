@@ -6,6 +6,7 @@ import {
   variablesByParameter,
 } from './template-rendering';
 import type { TemplateTextModel } from './template-text.types';
+import { TRACKING_LINK_SAMPLE_CODE } from './tracking-link-button';
 
 /** Why a synced template cannot be submitted again as it is. */
 export type TemplateCopySkipReason =
@@ -13,7 +14,7 @@ export type TemplateCopySkipReason =
   | 'not_synced'
   /** It has a text header, which this copy does not carry. */
   | 'text_header'
-  /** A button that is not a quick reply cannot be copied. */
+  /** A button other than a quick reply or one link cannot be copied. */
   | 'non_quick_reply_button'
   /** The provider's parameters do not match the registry's variables. */
   | 'format_mismatch'
@@ -43,7 +44,14 @@ export function planTemplateCopy(
 ): TemplateCopyPlan {
   if (!model) return { kind: 'skip', reason: 'not_synced' };
   if (model.header) return { kind: 'skip', reason: 'text_header' };
-  if (model.buttons.some((button) => button.kind !== 'quick_reply')) {
+  const links = model.buttons.filter((button) => button.kind === 'url');
+  if (
+    model.buttons.some(
+      (button) => button.kind !== 'quick_reply' && button.kind !== 'url',
+    ) ||
+    links.length > 1 ||
+    links.some((button) => !button.url?.length)
+  ) {
     return { kind: 'skip', reason: 'non_quick_reply_button' };
   }
   if (!category || category === 'unknown') {
@@ -81,10 +89,22 @@ export function planTemplateCopy(
       body: model.body,
       ...(model.footer ? { footer: model.footer } : {}),
       samples,
-      buttons: model.buttons.map((button) => ({
-        kind: 'quick_reply' as const,
-        text: button.text,
-      })),
+      // A link is copied as the provider holds it, its parameter at the end
+      // reviewed with a sample ending.
+      buttons: model.buttons.map((button) =>
+        button.kind === 'url' && button.url
+          ? {
+              kind: 'url' as const,
+              text: button.text,
+              url: button.url,
+              example: button.url
+                .map((segment) =>
+                  'text' in segment ? segment.text : TRACKING_LINK_SAMPLE_CODE,
+                )
+                .join(''),
+            }
+          : { kind: 'quick_reply' as const, text: button.text },
+      ),
     },
   };
 }

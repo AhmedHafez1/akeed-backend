@@ -114,9 +114,15 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+const META_BUTTON_KIND: Record<string, TemplateButtonKind> = {
+  QUICK_REPLY: 'quick_reply',
+  URL: 'url',
+  PHONE_NUMBER: 'phone',
+};
+
 function buttonKind(type: unknown): TemplateButtonKind {
-  return typeof type === 'string' && type.toUpperCase() === 'QUICK_REPLY'
-    ? 'quick_reply'
+  return typeof type === 'string'
+    ? (META_BUTTON_KIND[type.toUpperCase()] ?? 'other')
     : 'other';
 }
 
@@ -133,7 +139,8 @@ export function mapComponents(value: unknown): TemplateComponentsSnapshot {
   let headerImage = false;
   let body: string | undefined;
   let footer: string | undefined;
-  const buttons: { kind: TemplateButtonKind; text: string }[] = [];
+  const buttons: { kind: TemplateButtonKind; text: string; url?: string }[] =
+    [];
   for (const item of value) {
     const component = asRecord(item);
     if (!component || typeof component.type !== 'string') return unknown;
@@ -143,7 +150,14 @@ export function mapComponents(value: unknown): TemplateComponentsSnapshot {
       for (const entry of component.buttons) {
         const button = asRecord(entry);
         if (!button || typeof button.text !== 'string') return unknown;
-        buttons.push({ kind: buttonKind(button.type), text: button.text });
+        const kind = buttonKind(button.type);
+        buttons.push({
+          kind,
+          text: button.text,
+          ...(kind === 'url' && typeof button.url === 'string'
+            ? { url: button.url }
+            : {}),
+        });
       }
       continue;
     }

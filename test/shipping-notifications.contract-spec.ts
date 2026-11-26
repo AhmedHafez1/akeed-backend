@@ -244,6 +244,8 @@ beforeAll(async () => {
   await migrate('0107_shipping_sending.sql');
   await migrate('0108_shipping_template_drafts.sql');
   await migrate('0108_shipping_template_drafts.sql');
+  await migrate('0109_shipping_track_button.sql');
+  await migrate('0109_shipping_track_button.sql');
 });
 
 afterAll(async () => {
@@ -252,6 +254,112 @@ afterAll(async () => {
 });
 
 describe('shipping notifications against PostgreSQL', () => {
+  describe('the Track order code', () => {
+    const codeA = 'AAAAAAAAAAAAAAAAAAAAAA';
+    const codeB = 'BBBBBBBBBBBBBBBBBBBBBB';
+
+    it('keeps the first code and link kind across sends', async () => {
+      const seeded = await seed();
+      await record(seeded, {
+        trackingNumber: 'N1',
+        trackingCompany: 'Bosta',
+        trackingCode: codeA,
+      });
+      const ensure = (code: string) =>
+        repo.ensureTrackingCode({
+          orgId: orgA,
+          verificationId: seeded.verificationId,
+          stage: 'shipped',
+          code,
+          linkKind: code === codeA ? 'courier_page' : 'none',
+        });
+      await expect(ensure(codeB)).resolves.toBe(codeA);
+      await expect(ensure(codeB)).resolves.toBe(codeA);
+      await expect(repo.findByTrackingCode(codeA)).resolves.toMatchObject({
+        trackingNumber: 'N1',
+        trackingCompany: 'Bosta',
+      });
+      await expect(repo.findByTrackingCode(codeB)).resolves.toBeNull();
+      const [row] = await client<
+        { tracking_link_kind: string; tracking_company: string }[]
+      >`SELECT tracking_link_kind, tracking_company FROM verification_shipping_notifications WHERE verification_id = ${seeded.verificationId}`;
+      expect(row).toEqual({
+        tracking_link_kind: 'none',
+        tracking_company: 'Bosta',
+      });
+    });
+
+    it('gives a record without a code one at its first send', async () => {
+      const seeded = await seed();
+      await record(seeded);
+      await expect(
+        repo.ensureTrackingCode({
+          orgId: orgA,
+          verificationId: seeded.verificationId,
+          stage: 'shipped',
+          code: 'CCCCCCCCCCCCCCCCCCCCCC',
+          linkKind: 'none',
+        }),
+      ).resolves.toBe('CCCCCCCCCCCCCCCCCCCCCC');
+      // Another merchant's verification is never touched.
+      await expect(
+        repo.ensureTrackingCode({
+          orgId: orgB,
+          verificationId: seeded.verificationId,
+          stage: 'shipped',
+          code: 'DDDDDDDDDDDDDDDDDDDDDD',
+          linkKind: 'none',
+        }),
+      ).resolves.toBeNull();
+    });
+
+    it('refuses a duplicate or malformed code', async () => {
+      const seeded = await seed();
+      await expectConstraint(
+        record(seeded, { trackingCode: codeA }),
+        /verification_shipping_notifications_tracking_code_key/,
+      );
+      await expectConstraint(
+        record(seeded, { trackingCode: 'short' }),
+        /verification_shipping_notifications_tracking_code_check/,
+      );
+      await expectConstraint(
+        record(seeded, { trackingCompany: 'x'.repeat(101) }),
+        /verification_shipping_notifications_tracking_company_check/,
+      );
+    });
+
+    it('finds a shipment by code with its store and order, and records the first open', async () => {
+      await client`UPDATE integrations SET store_name = 'Ship A' WHERE id = ${integrationA}`;
+      const seeded = await seed();
+      await record(seeded, {
+        trackingNumber: 'N1',
+        trackingCompany: 'Bosta',
+        trackingCode: 'EEEEEEEEEEEEEEEEEEEEEE',
+      });
+      const found = await repo.findByTrackingCode('EEEEEEEEEEEEEEEEEEEEEE');
+      expect(found).toMatchObject({
+        trackingNumber: 'N1',
+        trackingCompany: 'Bosta',
+        storeName: 'Ship A',
+        orderNumber: '1001',
+        messageLanguage: null,
+      });
+      await expect(
+        repo.findByTrackingCode('ZZZZZZZZZZZZZZZZZZZZZZ'),
+      ).resolves.toBeNull();
+
+      await repo.markTrackingOpened(found!.id);
+      const [first] = await client<{ tracking_opened_at: string | null }[]>`
+        SELECT tracking_opened_at FROM verification_shipping_notifications WHERE id = ${found!.id}`;
+      expect(first.tracking_opened_at).not.toBeNull();
+      await repo.markTrackingOpened(found!.id);
+      const [second] = await client<{ tracking_opened_at: string | null }[]>`
+        SELECT tracking_opened_at FROM verification_shipping_notifications WHERE id = ${found!.id}`;
+      expect(second.tracking_opened_at).toEqual(first.tracking_opened_at);
+    });
+  });
+
   describe('migration and settings', () => {
     it('leaves existing stores off, with the fulfillment trigger on and no tags', async () => {
       const stores = await client<

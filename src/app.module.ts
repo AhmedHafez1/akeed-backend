@@ -30,6 +30,7 @@ import { MerchantBrandingModule } from './modules/merchant-branding/merchant-bra
 import { ReviewPromptModule } from './modules/review-prompt/review-prompt.module';
 import { MarketingEventsModule } from './modules/marketing-events/marketing-events.module';
 import { PublicStatsModule } from './modules/public-stats/public-stats.module';
+import { ShippingTrackingModule } from './modules/shipping-tracking/shipping-tracking.module';
 import { TipsModule } from './modules/tips/tips.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { OrdersModule } from './modules/orders/orders.module';
@@ -178,6 +179,7 @@ const billingModule = BillingModule.register({
     ReviewPromptModule,
     MarketingEventsModule,
     PublicStatsModule,
+    ShippingTrackingModule,
     TipsModule,
     OrganizationsModule,
     OrdersModule,

@@ -24,7 +24,17 @@ export interface TemplateTextModel {
   header?: TemplateTextSegment[];
   body: TemplateTextSegment[];
   footer?: TemplateTextSegment[];
-  buttons: { kind: TemplateButtonKind; text: string }[];
+  buttons: TemplateTextButton[];
+}
+
+/**
+ * A button as the provider holds it. A link button keeps its link: a fixed
+ * start and at most one parameter at the end.
+ */
+export interface TemplateTextButton {
+  kind: TemplateButtonKind;
+  text: string;
+  url?: TemplateTextSegment[];
 }
 
 /** A message ready to show: lines of text and button labels, nothing else. */
@@ -52,7 +62,10 @@ export type TemplateMessageSegment =
 
 export interface TemplateMessageLines {
   lines: TemplateMessageSegment[][];
+  /** The quick replies, in order. */
   buttons: string[];
+  /** The link button's label, shown after the quick replies. */
+  linkButton?: string;
   direction: 'rtl' | 'ltr';
   source: 'provider' | 'registered';
 }
