@@ -227,6 +227,8 @@ export class WhatsappSenderAlertsRepository {
         let reason = skipReason;
         // The banner asks for the payment method; no email.
         if (alert.kind === 'payment') reason ??= 'payment_no_email';
+        // Akeed sends the affected messages itself; the banner lists them.
+        if (alert.kind === 'template_rejection') reason ??= 'template_no_email';
         if (alert.kind === 'fallback') {
           // A BLOCKED health check is usually Meta still setting the number
           // up, not a confirmed restriction; the banner covers it, no email.
