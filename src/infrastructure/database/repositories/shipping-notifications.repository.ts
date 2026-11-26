@@ -1,9 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   integrations,
   orders,
+  verificationMessageDispatches,
   verificationShippingNotifications,
   verifications,
 } from '../schema';
@@ -13,7 +14,9 @@ import {
   type ShippingCustomerReply,
   type ShippingFailureReason,
   type ShippingStage,
+  type ShippingTrackingLinkKind,
 } from '../../../shared/shipping/shipping-notification.types';
+import type { TemplateLanguage } from '../../../shared/messaging/template-registry.types';
 
 export type ShippingNotificationRow =
   typeof verificationShippingNotifications.$inferSelect;
@@ -31,6 +34,24 @@ export interface ShippingOrderContext {
   shippingNotificationsEnabled: boolean;
   shippingFulfillmentTriggerEnabled: boolean;
   shippingTags: string[];
+}
+
+/**
+ * What the public Track order page may show for one code: the shipment's
+ * tracking and the store and order it belongs to. Never the customer's name,
+ * phone or address.
+ */
+export interface ShippingTrackingLookup {
+  id: string;
+  createdAt: string;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  trackingCompany: string | null;
+  storeName: string | null;
+  orderNumber: string | null;
+  /** The language the Shipped message went out in, when it went out. */
+  messageLanguage: TemplateLanguage | null;
+  storeLanguage: string | null;
 }
 
 /** The record and what the send job re-checks before sending. */
@@ -315,6 +336,113 @@ export class ShippingNotificationsRepository {
             ...verificationIds,
           ]),
           eq(verificationShippingNotifications.stage, 'shipped'),
+        ),
+      );
+  }
+
+  /**
+   * The shipment's Track order code, kept stable: a code stored earlier is
+   * returned as it is, and `code` is stored only when there is none. The link
+   * kind is recorded the same way, once. Null when there is no record.
+   */
+  async ensureTrackingCode(params: {
+    orgId: string;
+    verificationId: string;
+    stage: ShippingStage;
+    code: string;
+    linkKind: ShippingTrackingLinkKind;
+  }): Promise<string | null> {
+    const rows = await this.db
+      .update(verificationShippingNotifications)
+      .set({
+        trackingCode: sql`coalesce(${verificationShippingNotifications.trackingCode}, ${params.code})`,
+        trackingLinkKind: sql`coalesce(${verificationShippingNotifications.trackingLinkKind}, ${params.linkKind})`,
+      })
+      .where(
+        and(
+          eq(verificationShippingNotifications.orgId, params.orgId),
+          eq(
+            verificationShippingNotifications.verificationId,
+            params.verificationId,
+          ),
+          eq(verificationShippingNotifications.stage, params.stage),
+        ),
+      )
+      .returning({ code: verificationShippingNotifications.trackingCode });
+    return rows[0]?.code ?? null;
+  }
+
+  /**
+   * One shipment by its Track order code, through the unique index. The code
+   * is the only key: the caller is a customer with no account.
+   */
+  async findByTrackingCode(
+    code: string,
+  ): Promise<ShippingTrackingLookup | null> {
+    const rows = await this.db
+      .select({
+        id: verificationShippingNotifications.id,
+        createdAt: verificationShippingNotifications.createdAt,
+        trackingNumber: verificationShippingNotifications.trackingNumber,
+        trackingUrl: verificationShippingNotifications.trackingUrl,
+        trackingCompany: verificationShippingNotifications.trackingCompany,
+        storeName: integrations.storeName,
+        orderNumber: orders.orderNumber,
+        messageLanguage: verificationMessageDispatches.resolvedLanguage,
+        storeLanguage: integrations.defaultLanguage,
+      })
+      .from(verificationShippingNotifications)
+      .innerJoin(
+        verifications,
+        and(
+          eq(
+            verifications.id,
+            verificationShippingNotifications.verificationId,
+          ),
+          eq(verifications.orgId, verificationShippingNotifications.orgId),
+        ),
+      )
+      .innerJoin(
+        orders,
+        and(
+          eq(orders.id, verifications.orderId),
+          eq(orders.orgId, verifications.orgId),
+        ),
+      )
+      .leftJoin(
+        integrations,
+        and(
+          eq(integrations.id, orders.integrationId),
+          eq(integrations.orgId, orders.orgId),
+        ),
+      )
+      .leftJoin(
+        verificationMessageDispatches,
+        and(
+          eq(
+            verificationMessageDispatches.id,
+            verificationShippingNotifications.dispatchId,
+          ),
+          eq(
+            verificationMessageDispatches.orgId,
+            verificationShippingNotifications.orgId,
+          ),
+        ),
+      )
+      .where(eq(verificationShippingNotifications.trackingCode, code))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  /** Records the first time the link was opened; later opens change nothing. */
+  async markTrackingOpened(id: string): Promise<void> {
+    await this.db
+      .update(verificationShippingNotifications)
+      .set({ trackingOpenedAt: sql`now()` })
+      .where(
+        and(
+          eq(verificationShippingNotifications.id, id),
+          isNull(verificationShippingNotifications.trackingOpenedAt),
         ),
       );
   }

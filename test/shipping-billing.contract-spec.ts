@@ -17,6 +17,7 @@ import {
 } from '../src/infrastructure/database/schema';
 import type { BillingPlanId } from '../src/shared/billing/billing-plan';
 import type { RegistryTemplate } from '../src/shared/messaging/template-registry.types';
+import { validateTemplateDraft } from '../src/shared/messaging/template-draft.validation';
 import { seededTemplateRegistry } from '../src/shared/messaging/testing/seeded-template-registry';
 import type { MessagingPort } from '../src/shared/ports/messaging.port';
 import { MerchantMessageFailure } from '../src/shared/ports/sender-recovery.port';
@@ -253,6 +254,8 @@ beforeAll(async () => {
     '0107_shipping_sending.sql',
     '0108_shipping_template_drafts.sql',
     '0108_shipping_template_drafts.sql',
+    '0109_shipping_track_button.sql',
+    '0109_shipping_track_button.sql',
   ])
     await migrateAgain(name);
 });
@@ -290,6 +293,88 @@ describe('shipping billing against PostgreSQL', () => {
     expect(ack.body).toBe(
       "Thank you. We've let {{store}} know about your order {{order}}.",
     );
+  });
+
+  it('gives the six Shipped drafts their Track order label, valid as stored', async () => {
+    const drafts = await harness.client<
+      {
+        purpose: 'shipping_shipped';
+        language: 'ar' | 'en' | 'ur' | 'es' | 'fr' | 'tr';
+        style: string;
+        version: number;
+        meta_template_name: string;
+        meta_language_code: string;
+        parameter_format: 'named' | 'positional';
+        category: 'utility';
+        body: string;
+        confirm_label: string;
+        cancel_label: string;
+        change_label: string | null;
+        link_label: string | null;
+        samples: Record<string, string>;
+      }[]
+    >`SELECT purpose, language, style, version, meta_template_name, meta_language_code, parameter_format, category, body, confirm_label, cancel_label, change_label, link_label, samples
+      FROM whatsapp_template_drafts WHERE purpose = 'shipping_shipped' ORDER BY language`;
+    expect(
+      Object.fromEntries(drafts.map((d) => [d.language, d.link_label])),
+    ).toEqual({
+      ar: 'تتبع الطلب',
+      en: 'Track order',
+      es: 'Rastrear pedido',
+      fr: 'Suivre la commande',
+      tr: 'Siparişi takip et',
+      ur: 'آرڈر ٹریک کریں',
+    });
+    for (const d of drafts) {
+      const validation = validateTemplateDraft(
+        {
+          purpose: d.purpose,
+          language: d.language,
+          style: d.style,
+          version: d.version,
+          templateName: d.meta_template_name,
+          languageCode: d.meta_language_code,
+          parameterFormat: d.parameter_format,
+          category: d.category,
+          body: d.body,
+          confirmLabel: d.confirm_label,
+          cancelLabel: d.cancel_label,
+          changeLabel: d.change_label,
+          linkLabel: d.link_label,
+          samples: d.samples,
+        },
+        { takenIdentities: new Set() },
+      );
+      expect({ language: d.language, issues: validation.issues }).toEqual({
+        language: d.language,
+        issues: [],
+      });
+    }
+  });
+
+  it('labels only drafts that are still unsubmitted, and reruns cleanly', async () => {
+    await harness.client`
+      UPDATE whatsapp_template_drafts SET link_label = NULL
+      WHERE key IN ('shipping_shipped.en.default_v1', 'shipping_shipped.fr.default_v1')`;
+    await harness.client`
+      UPDATE whatsapp_template_drafts SET state = 'submitting'
+      WHERE key = 'shipping_shipped.fr.default_v1'`;
+    try {
+      await migrateAgain('0109_shipping_track_button.sql');
+      await migrateAgain('0109_shipping_track_button.sql');
+      const rows = await harness.client<
+        { key: string; link_label: string | null }[]
+      >`SELECT key, link_label FROM whatsapp_template_drafts
+        WHERE key IN ('shipping_shipped.en.default_v1', 'shipping_shipped.fr.default_v1') ORDER BY key`;
+      expect(rows).toEqual([
+        { key: 'shipping_shipped.en.default_v1', link_label: 'Track order' },
+        { key: 'shipping_shipped.fr.default_v1', link_label: null },
+      ]);
+    } finally {
+      await harness.client`
+        UPDATE whatsapp_template_drafts SET state = 'draft', link_label = 'Suivre la commande'
+        WHERE key = 'shipping_shipped.fr.default_v1'`;
+    }
   });
 
   it('keeps a Shipped template the provider already holds', async () => {

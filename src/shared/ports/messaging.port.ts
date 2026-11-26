@@ -65,6 +65,11 @@ export interface MessagingPort {
      * builds the confirmation payloads as before.
      */
     buttonPayloads?: readonly string[];
+    /**
+     * The end of the Track order link (the shipment's code). Sent only when
+     * the template holds a link button; otherwise ignored.
+     */
+    trackingCode?: string;
   }): Promise<{
     messages?: Array<{ id: string }>;
     /** What the adapter sent. Absent when an adapter does not report it. */

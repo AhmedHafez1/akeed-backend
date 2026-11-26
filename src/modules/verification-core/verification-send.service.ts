@@ -77,6 +77,8 @@ import { VerificationAutomationProducer } from '../verification-automation/verif
 import { ShippingNotificationsRepository } from '../../infrastructure/database/repositories/shipping-notifications.repository';
 import { selectShippingTemplate } from '../../shared/shipping/shipping-template-selector';
 import { shippingTrackingLine } from '../../shared/shipping/shipping-tracking-line';
+import { generateShippingTrackingCode } from '../../shared/shipping/shipping-tracking-code';
+import { shippingTrackingLinkKind } from '../../shared/shipping/shipping-courier.policy';
 import { shippingButtonPayloads } from '../../shared/shipping/shipping-reply';
 import { isShippingDispatchKind } from '../../infrastructure/database/repositories/verification-message-dispatches.repository';
 
@@ -887,11 +889,11 @@ export class VerificationSendService {
         ...(Object.keys(detailValues).length ? { detailValues } : {}),
         ...(shipping
           ? {
-              tracking: await this.shippingTracking(
+              ...(await this.shippingTracking(
                 order.orgId,
                 verification.id,
                 template.language,
-              ),
+              )),
               buttonPayloads: shippingButtonPayloads(verification.id),
             }
           : {}),
@@ -1268,21 +1270,37 @@ export class VerificationSendService {
         };
   }
 
-  /** The tracking line, from the order's shipping record. */
+  /**
+   * The tracking line and the Track order code, from the order's shipping
+   * record. The code is stored before the send, so a retry sends the same
+   * link; what it opens is recorded once, for coverage reports.
+   */
   private async shippingTracking(
     orgId: string,
     verificationId: string,
     language: TemplateLanguage,
-  ): Promise<string> {
+  ): Promise<{ tracking: string; trackingCode?: string }> {
     const record = await this.shippingNotifications?.findByVerification({
       orgId,
       verificationId,
       stage: 'shipped',
     });
-    return shippingTrackingLine(language, {
+    const tracking = shippingTrackingLine(language, {
       number: record?.trackingNumber ?? undefined,
-      url: record?.trackingUrl ?? undefined,
     });
+    if (!record) return { tracking };
+    const trackingCode = await this.shippingNotifications?.ensureTrackingCode({
+      orgId,
+      verificationId,
+      stage: 'shipped',
+      code: record.trackingCode ?? generateShippingTrackingCode(),
+      linkKind: shippingTrackingLinkKind({
+        url: record.trackingUrl,
+        company: record.trackingCompany,
+        number: record.trackingNumber,
+      }),
+    });
+    return { tracking, ...(trackingCode ? { trackingCode } : {}) };
   }
 
   /** Which template a send carried, for logs: identifiers only, no text. */

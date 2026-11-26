@@ -41,7 +41,7 @@ const SHORT_EN_MODEL: TemplateTextModel = {
     { parameter: '2' },
     { text: '\n\nPlease confirm your order.' },
   ],
-  buttons: SHORT_EN_SNAPSHOT.buttons,
+  buttons: SHORT_EN_SNAPSHOT.buttons.map(({ kind, text }) => ({ kind, text })),
 };
 
 function inspected(

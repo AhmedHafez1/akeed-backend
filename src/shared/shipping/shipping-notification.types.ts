@@ -56,4 +56,20 @@ export const UNREACHABLE_SHIPPING_REASONS: readonly ShippingFailureReason[] = [
 export interface ShippingTracking {
   number?: string;
   url?: string;
+  /** The carrier's name as the store sends it, for example `Bosta`. */
+  company?: string;
 }
+
+/**
+ * What a shipment's Track order link opens: the store's carrier link, a
+ * courier's public page built from the number, or Akeed's own page with the
+ * number or with nothing to track.
+ */
+export const SHIPPING_TRACKING_LINK_KINDS = [
+  'carrier_link',
+  'courier_page',
+  'number_only',
+  'none',
+] as const;
+export type ShippingTrackingLinkKind =
+  (typeof SHIPPING_TRACKING_LINK_KINDS)[number];

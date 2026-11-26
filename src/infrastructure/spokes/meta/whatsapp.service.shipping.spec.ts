@@ -97,6 +97,101 @@ describe('WhatsAppService: the Shipped message', () => {
     ]);
   });
 
+  const WITH_LINK: SelectedCodTemplate = {
+    ...SHIPPED,
+    components: {
+      body: 'Hello {{customer}}',
+      buttons: [
+        { kind: 'quick_reply', text: "I'll receive it" },
+        { kind: 'quick_reply', text: "Won't be available" },
+        { kind: 'quick_reply', text: 'Change address' },
+        {
+          kind: 'url',
+          text: 'Track order',
+          url: 'https://getakeed.com/t/{{tracking_code}}',
+        },
+      ],
+    },
+  };
+
+  const urlButtons = (body: SentPayload) =>
+    body.template.components.filter(
+      (component) => component.sub_type === 'url',
+    );
+
+  it('fills the end of the Track order link at the button index', async () => {
+    const { service, httpService } = createService();
+    await service.sendVerificationTemplate({
+      to: '+12025550100',
+      orderNumber: '1001',
+      totalPrice: '100',
+      verificationId: VERIFICATION,
+      template: WITH_LINK,
+      buttonPayloads: shippingButtonPayloads(VERIFICATION),
+      trackingCode: 'Xk3pQ9vT2mLr8sYwB4nHcA',
+    });
+    const [, body] = httpService.post.mock.calls[0] as [string, SentPayload];
+    expect(urlButtons(body)).toEqual([
+      {
+        type: 'button',
+        sub_type: 'url',
+        index: 3,
+        parameters: [
+          {
+            type: 'text',
+            parameter_name: 'tracking_code',
+            text: 'Xk3pQ9vT2mLr8sYwB4nHcA',
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('uses a positional link parameter without a name', async () => {
+    const { service, httpService } = createService();
+    await service.sendVerificationTemplate({
+      to: '+12025550100',
+      orderNumber: '1001',
+      totalPrice: '100',
+      verificationId: VERIFICATION,
+      template: {
+        ...WITH_LINK,
+        components: {
+          body: 'Hello {{customer}}',
+          buttons: [
+            { kind: 'quick_reply', text: 'A' },
+            { kind: 'url', text: 'Track', url: 'https://getakeed.com/t/{{1}}' },
+          ],
+        },
+      },
+      buttonPayloads: shippingButtonPayloads(VERIFICATION),
+      trackingCode: 'Xk3pQ9vT2mLr8sYwB4nHcA',
+    });
+    const [, body] = httpService.post.mock.calls[0] as [string, SentPayload];
+    expect(urlButtons(body)[0]).toMatchObject({
+      index: 1,
+      parameters: [{ type: 'text', text: 'Xk3pQ9vT2mLr8sYwB4nHcA' }],
+    });
+    expect(urlButtons(body)[0].parameters[0]).not.toHaveProperty(
+      'parameter_name',
+    );
+  });
+
+  it('sends no link parameter to a template without a link button', async () => {
+    const { service, httpService } = createService();
+    await service.sendVerificationTemplate({
+      to: '+12025550100',
+      orderNumber: '1001',
+      totalPrice: '100',
+      verificationId: VERIFICATION,
+      template: SHIPPED,
+      buttonPayloads: shippingButtonPayloads(VERIFICATION),
+      trackingCode: 'Xk3pQ9vT2mLr8sYwB4nHcA',
+    });
+    const [, body] = httpService.post.mock.calls[0] as [string, SentPayload];
+    expect(urlButtons(body)).toEqual([]);
+  });
+
   it('never sends an empty tracking parameter', async () => {
     const { service, httpService } = createService();
     await service.sendVerificationTemplate({

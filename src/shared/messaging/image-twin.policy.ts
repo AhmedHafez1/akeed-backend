@@ -90,5 +90,9 @@ export function planImageTwin(
   ) {
     return { kind: 'adopt', templateName };
   }
+  // A twin repeats quick replies only: the Shipped message, the one template
+  // with a link button, is never sent with a logo header.
+  if (model?.buttons.some((button) => button.kind !== 'quick_reply'))
+    return { kind: 'skip', reason: 'non_quick_reply_button' };
   return planTemplateCopy(template, parent.category, model, templateName);
 }

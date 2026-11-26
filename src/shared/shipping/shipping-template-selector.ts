@@ -74,7 +74,12 @@ export function selectShippingTemplate(
     const template = sendableShippingDefault(templates, language);
     if (template)
       return {
-        template: toSelectedTemplate(template),
+        // The synced text goes along so the sender can find the Track order
+        // button and fill the end of its link.
+        template: {
+          ...toSelectedTemplate(template),
+          ...(template.components ? { components: template.components } : {}),
+        },
         requestedLanguage,
         ...(language !== requestedLanguage
           ? { fallbackReason: 'language_unavailable' as const }

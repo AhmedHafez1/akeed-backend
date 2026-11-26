@@ -6,9 +6,11 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { readShippingNotificationsConfig } from '../../shared/config/shipping-notifications.config';
 import {
   WhatsappTemplateDraftsRepository,
   effectiveDraftState,
@@ -99,6 +101,8 @@ export interface AdminTemplateDraftView {
   confirm_label: string;
   cancel_label: string;
   change_label?: string | null;
+  /** The Shipped message's Track order link button label. */
+  link_label?: string | null;
   change_request_of_key?: string | null;
   samples: Partial<Record<TemplateVariableKey, string>>;
   state: TemplateDraftState;
@@ -161,6 +165,9 @@ function previewOf(content: TemplateDraftContent): RenderedTemplateMessage {
       ...(content.changeLabel
         ? [{ label: content.changeLabel, kind: 'quick_reply' as const }]
         : []),
+      ...(content.linkLabel
+        ? [{ label: content.linkLabel, kind: 'url' as const }]
+        : []),
     ],
     direction: templateDirection(content.language),
   };
@@ -192,6 +199,23 @@ export class AdminTemplateDraftService {
     private readonly registry: TemplateRegistryPort,
     private readonly config: ConfigService,
   ) {}
+
+  /**
+   * The origin a Track order button links to. A draft with a link button is
+   * never submitted without it: the provider fixes the link on approval.
+   */
+  private trackingLinkBase(): string {
+    const base = readShippingNotificationsConfig(
+      this.config,
+    ).trackingLinkBaseUrl;
+    if (base) return base;
+    throw new ServiceUnavailableException({
+      statusCode: 503,
+      error: 'Service Unavailable',
+      message: 'The Track order link origin is not configured.',
+      code: WHATSAPP_TEMPLATE_ERROR_CODES.trackingLinkUnconfigured,
+    });
+  }
 
   context(userId: string): AdminTemplateAuthoringContext {
     const config = readWhatsappTemplateConfig(this.config);
@@ -387,6 +411,7 @@ export class AdminTemplateDraftService {
         });
       }
     }
+    if (saved.linkLabel) this.trackingLinkBase();
     const claim = await this.drafts.claimForSubmit(id);
     switch (claim.kind) {
       case 'not_found':
@@ -451,7 +476,12 @@ export class AdminTemplateDraftService {
     draft: AdminTemplateDraftView;
   }> {
     const content = toDraftContent(draft);
-    const submission = toTemplateSubmission(content);
+    const submission = toTemplateSubmission(content, undefined, {
+      // A submit checked the origin before claiming the draft; a reconcile
+      // only reads the provider's list and never creates.
+      trackingLinkBase:
+        content.linkLabel && mode === 'submit' ? this.trackingLinkBase() : null,
+    });
     const audit = (metadata: Record<string, unknown>): TemplateAuditEntry => ({
       ...actor,
       metadata: { draftId: draft.id, templateKey: draft.key, ...metadata },
@@ -665,6 +695,7 @@ export class AdminTemplateDraftService {
       confirm_label: row.confirmLabel,
       cancel_label: row.cancelLabel,
       change_label: row.changeLabel,
+      link_label: row.linkLabel,
       change_request_of_key: row.changeRequestOfKey,
       samples: row.samples,
       state,

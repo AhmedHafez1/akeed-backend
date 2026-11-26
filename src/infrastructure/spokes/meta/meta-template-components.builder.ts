@@ -3,6 +3,7 @@ import type {
   TemplateCopySubmission,
   TemplateEditSubmission,
   TemplateSubmission,
+  TemplateSubmissionButton,
 } from '../../../shared/messaging/template-draft.types';
 import type { TemplateTextSegment } from '../../../shared/messaging/template-text.types';
 import type { TemplateCategory } from '../../../shared/messaging/template-provider.types';
@@ -34,16 +35,36 @@ const META_PARAMETER_FORMAT = {
 export function buildMetaComponents(
   submission: TemplateEditSubmission,
 ): unknown[] {
-  return [
-    buildBodyComponent(submission),
-    {
-      type: 'BUTTONS',
-      buttons: submission.buttons.map((button) => ({
-        type: 'QUICK_REPLY',
-        text: button.text,
-      })),
-    },
+  return [buildBodyComponent(submission), buildButtonsComponent(submission)];
+}
+
+/**
+ * Quick replies first, then a link button: Meta refuses buttons whose quick
+ * replies are not grouped together. A link with a parameter at its end
+ * carries the whole sample link as its `example`.
+ */
+function buildButtonsComponent(submission: {
+  buttons: readonly TemplateSubmissionButton[];
+}): Record<string, unknown> {
+  const ordered = [
+    ...submission.buttons.filter((button) => button.kind === 'quick_reply'),
+    ...submission.buttons.filter((button) => button.kind !== 'quick_reply'),
   ];
+  return {
+    type: 'BUTTONS',
+    buttons: ordered.map((button) =>
+      button.kind === 'url'
+        ? {
+            type: 'URL',
+            text: button.text,
+            url: toMetaText(button.url),
+            ...(button.url.some((segment) => 'parameter' in segment)
+              ? { example: [button.example] }
+              : {}),
+          }
+        : { type: 'QUICK_REPLY', text: button.text },
+    ),
+  };
 }
 
 /** Meta's placeholder syntax back into text: `{{name}}` or `{{1}}`. */
@@ -129,13 +150,7 @@ function buildCopyBody(
       ...(submission.footer && submission.footer.length > 0
         ? [{ type: 'FOOTER', text: toMetaText(submission.footer) }]
         : []),
-      {
-        type: 'BUTTONS',
-        buttons: submission.buttons.map((button) => ({
-          type: 'QUICK_REPLY',
-          text: button.text,
-        })),
-      },
+      buildButtonsComponent(submission),
     ],
   };
 }

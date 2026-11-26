@@ -131,6 +131,8 @@ describe('ShippingNotificationsService', () => {
       matchedTag: null,
       trackingNumber: 'N1',
       trackingUrl: 'https://t.example/N1',
+      trackingCompany: null,
+      trackingCode: expect.stringMatching(/^[A-Za-z0-9_-]{22}$/) as string,
       status: 'pending',
       reasonCode: null,
     });

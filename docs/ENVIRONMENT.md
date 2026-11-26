@@ -522,6 +522,7 @@ the template operators under `/api/admin/message-texts` (same
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `SHIPPING_NOTIFICATIONS_ENABLED` | `false` | `true` turns shipping notifications on for the platforms that have a shipping event source (Shopify). Each store still opts in. `false`: `GET /api/settings` omits the shipping fields, `PATCH /api/settings` refuses them with `SETTINGS_SHIPPING_NOTIFICATIONS_UNAVAILABLE`, and `orders/updated` deliveries are acknowledged without being stored. Any value other than `true`, `false` or empty stops the boot. |
+| `SHIPPING_TRACKING_LINK_BASE_URL` | unset | The site origin of the Shipped message's **Track order** button, for example `https://getakeed.com`: the button opens `<origin>/t/<code>`. An HTTPS origin with no path, query, fragment or trailing slash; required when `SHIPPING_NOTIFICATIONS_ENABLED=true`. Unset, Shipped drafts cannot be submitted (`WHATSAPP_TEMPLATE_TRACKING_LINK_UNCONFIGURED`). The origin is written into each Shipped template when it is submitted, and Meta fixes it on approval: changing it later does not change approved templates, so their buttons keep opening the old origin until new templates are submitted and approved. |
 
 A store's settings are `shipping_notifications_enabled` (off by default),
 `shipping_fulfillment_trigger_enabled` (on by default) and `shipping_tags`
