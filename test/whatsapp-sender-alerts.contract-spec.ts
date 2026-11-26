@@ -174,6 +174,14 @@ describe('sender alert PostgreSQL contract', () => {
     expect(banners[0].templates.map((t) => t.key)).toEqual(['first', 'second']);
     const incidents = await repo.reconcile(org, true);
     expect(incidents).toHaveLength(1);
+    // The banner lists the templates; it sends no email.
+    expect(await repo.claimEmail(org, incidents[0].id, true)).toBeNull();
+    const [templateRow] =
+      await client`SELECT email_status,email_error FROM whatsapp_sender_alerts WHERE id=${incidents[0].id}`;
+    expect(templateRow).toMatchObject({
+      email_status: 'skipped',
+      email_error: 'template_no_email',
+    });
     await client`UPDATE whatsapp_connection_templates SET status='approved'`;
     expect(await repo.reconcile(org, true)).toEqual([]);
     expect(await repo.read(org, true)).toEqual([]);
