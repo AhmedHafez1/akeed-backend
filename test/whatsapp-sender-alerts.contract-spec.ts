@@ -97,6 +97,21 @@ describe('sender alert PostgreSQL contract', () => {
     await client`INSERT INTO verification_message_dispatches(org_id,state,accepted_at,sender_kind,sender_reason,fallback_for_dispatch_id) VALUES (${org},'accepted',now(),'akeed_system','send_failed:131000',${source})`;
   }
 
+  // The payment banner waits for an approved template.
+  async function approvedTemplate() {
+    const [t] = await client<
+      { id: string }[]
+    >`INSERT INTO whatsapp_templates(key) VALUES ('approved') RETURNING id`;
+    await client`INSERT INTO whatsapp_connection_templates VALUES (${org},${connection},${t.id},'en','approved','utility')`;
+  }
+
+  it('asks for a payment method only once a template is approved', async () => {
+    await client`UPDATE whatsapp_connections SET degraded_class='payment' WHERE org_id=${org}`;
+    expect(await repo.read(org, true)).toEqual([]);
+    await approvedTemplate();
+    expect(await repo.read(org, true)).toMatchObject([{ kind: 'payment' }]);
+  });
+
   it('deduplicates simultaneous evaluations and claims exactly one delivery', async () => {
     await client`UPDATE whatsapp_connections SET quality_rating = 'RED' WHERE org_id = ${org}`;
     await Promise.all(
@@ -187,6 +202,7 @@ describe('sender alert PostgreSQL contract', () => {
     expect(await repo.read(org, true)).toEqual([]);
   });
   it('keeps banners with email disabled and no recipient; reads never write incidents', async () => {
+    await approvedTemplate();
     await client`UPDATE whatsapp_connections SET degraded_class='payment' WHERE org_id=${org}`;
     expect(await repo.read(org, false)).toMatchObject([{ kind: 'payment' }]);
     expect(await client`SELECT * FROM whatsapp_sender_alerts`).toHaveLength(0);
@@ -226,6 +242,7 @@ describe('sender alert PostgreSQL contract', () => {
   });
   it('suppresses generic fallback for a specific cause and does not consume its rate-limit budget', async () => {
     await fallback();
+    await approvedTemplate();
     await client`UPDATE whatsapp_connections SET degraded_class='payment' WHERE org_id=${org}`;
     const pending = await repo.reconcile(org, true);
     const generic = pending.find((a) => a.kind === 'fallback')!;
@@ -248,6 +265,7 @@ describe('sender alert PostgreSQL contract', () => {
   });
   it('records disabled email ahead of suppression and records missing recipients without retrying', async () => {
     await fallback();
+    await approvedTemplate();
     await client`UPDATE whatsapp_connections SET degraded_class='payment' WHERE org_id=${org}`;
     const pending = await repo.reconcile(org, true);
     const generic = pending.find((a) => a.kind === 'fallback')!;
