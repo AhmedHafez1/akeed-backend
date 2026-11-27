@@ -707,7 +707,7 @@ describe('merchant sender recovery on disposable PostgreSQL', () => {
     },
   );
   it.each(['credentials', 'payment', 'restricted'] as const)(
-    'health recovery of %s: LIMITED clears only restricted, AVAILABLE all but credentials',
+    'health recovery of %s: LIMITED and AVAILABLE clear all but credentials',
     async (degraded) => {
       const f = await fixture('standalone');
       await db
@@ -719,13 +719,13 @@ describe('merchant sender recovery on disposable PostgreSQL', () => {
         f.connection.id,
         1,
       );
-      // LIMITED can send: it clears a restriction, but credentials and
-      // payment wait for AVAILABLE.
+      // LIMITED can send: without a reported payment error it clears a payment
+      // block as well as a restriction. Credentials stay degraded.
       const limited = await connections.completeHealth(claim, {
         status: 'LIMITED',
       });
       expect(limited.degradedClass).toBe(
-        degraded === 'restricted' ? null : degraded,
+        degraded === 'credentials' ? 'credentials' : null,
       );
       expect(limited.state).toBe('active');
       await db
@@ -741,6 +741,36 @@ describe('merchant sender recovery on disposable PostgreSQL', () => {
         (await connections.completeHealth(claim, { status: 'AVAILABLE' }))
           .degradedClass,
       ).toBe(degraded === 'credentials' ? 'credentials' : null);
+    },
+  );
+  it.each([
+    { code: undefined, degradedClass: null, state: 'active' },
+    { code: 141006, degradedClass: 'payment', state: 'verifying' },
+    { code: 190, degradedClass: 'payment', state: 'verifying' },
+  ])(
+    'a payment-blocked new number on LIMITED with error $code ends $state',
+    async ({ code, degradedClass, state }) => {
+      const f = await fixture('standalone');
+      await db
+        .update(whatsappConnections)
+        .set({
+          state: 'verifying',
+          degradedClass: 'payment',
+          degradedSince: now(),
+        })
+        .where(eq(whatsappConnections.id, f.connection.id));
+      const claim = await connections.claimHealth(
+        f.source.orgId,
+        f.connection.id,
+        1,
+      );
+      const row = await connections.completeHealth(claim, {
+        status: 'LIMITED',
+        ...(code === undefined
+          ? {}
+          : { failure: classifyOwnNumberFailure({ code }) }),
+      });
+      expect(row).toMatchObject({ degradedClass, state });
     },
   );
   it.each(['disconnect', 'replacement', 'new_degradation'] as const)(
