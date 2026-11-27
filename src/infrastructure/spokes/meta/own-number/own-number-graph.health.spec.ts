@@ -106,6 +106,19 @@ describe('Meta phone health mapping', () => {
       'Your display name has not been approved yet.',
     ]);
   });
+  it('keeps a payment error that Meta reports beside LIMITED', async () => {
+    const s = setup({
+      id: '1000',
+      health_status: {
+        can_send_message: 'LIMITED',
+        entities: [{ errors: [{ error_code: 141006 }] }],
+      },
+    });
+    expect(await s.client.readHealth('1000', 'synthetic-token')).toMatchObject({
+      status: 'LIMITED',
+      failure: { class: 'payment', degrade: 'payment' },
+    });
+  });
   it('uses health entity error codes for degradation', async () => {
     const s = setup({
       id: '1000',

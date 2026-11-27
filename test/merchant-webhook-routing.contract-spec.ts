@@ -334,7 +334,7 @@ describe('merchant webhook routing PostgreSQL contract', () => {
     },
   );
 
-  it('offboards, reconnects through verifying and resumes only after AVAILABLE health', async () => {
+  it('offboards, reconnects through verifying and resumes once health says it can send', async () => {
     const f = await fixture();
     expect(
       await connections.applyLifecycle(event(f, 'ACCOUNT_OFFBOARDED')),
@@ -355,14 +355,9 @@ describe('merchant webhook routing PostgreSQL contract', () => {
     ).toMatchObject({ state: 'verifying' });
     await connections.requestHealth(f.source.orgId, f.connection.id, 1);
     claim = await connections.claimHealth(f.source.orgId, f.connection.id, 1);
-    // BLOCKED left it degraded: LIMITED alone does not bring it back.
+    // LIMITED can send: it clears the restriction BLOCKED left behind.
     expect(
       await connections.completeHealth(claim, { status: 'LIMITED' }),
-    ).toMatchObject({ state: 'verifying', degradedClass: 'restricted' });
-    await connections.requestHealth(f.source.orgId, f.connection.id, 1);
-    claim = await connections.claimHealth(f.source.orgId, f.connection.id, 1);
-    expect(
-      await connections.completeHealth(claim, { status: 'AVAILABLE' }),
     ).toMatchObject({ state: 'active', degradedClass: null });
   });
 
