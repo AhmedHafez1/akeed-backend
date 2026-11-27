@@ -77,7 +77,15 @@ export function senderAlerts(
       'reconnect',
       'critical',
     );
-  if (facts.degradedClass === 'payment')
+  // Asked for only once a template is approved, when the payment method is
+  // what stands between the merchant's number and sending. Until then Akeed
+  // confirms the orders and the template review is the first step.
+  if (
+    facts.degradedClass === 'payment' &&
+    facts.templates.some(
+      (t) => t.status === 'approved' && t.category === 'utility',
+    )
+  )
     add('payment', 'payment', 'whatsapp_manager');
   if (facts.qualityRating === 'RED')
     add('quality_drop', 'red', 'whatsapp_manager');

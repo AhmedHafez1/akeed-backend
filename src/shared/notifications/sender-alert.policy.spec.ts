@@ -15,6 +15,12 @@ const healthy: SenderAlertFacts = {
   fallback: null,
   merchantAcceptedAt: null,
 };
+const approvedTemplate = {
+  key: 'cod_confirm.en',
+  language: 'en',
+  status: 'approved',
+  category: 'utility',
+};
 const evaluate = (facts: Partial<SenderAlertFacts> = {}, enabled = true) =>
   senderAlerts({ ...healthy, ...facts }, enabled);
 
@@ -82,8 +88,22 @@ describe('sender alerts', () => {
       }),
     ).toEqual([]);
   });
+  it('asks for a payment method only once a template is approved', () => {
+    const template = (status: string) => ({
+      key: 'cod_confirm.en',
+      language: 'en',
+      status,
+      category: 'utility',
+    });
+    for (const templates of [[], [template('pending')]])
+      expect(evaluate({ degradedClass: 'payment', templates })).toEqual([]);
+    expect(
+      evaluate({ degradedClass: 'payment', templates: [template('approved')] }),
+    ).toMatchObject([{ kind: 'payment' }]);
+  });
   it('shows payment and suppresses duplicate fallback email', () => {
     const result = evaluate({
+      templates: [approvedTemplate],
       degradedClass: 'payment',
       fallback: { reason: 'degraded:payment', at: '2026-11-04T10:00:00Z' },
     });
@@ -112,7 +132,12 @@ describe('sender alerts', () => {
       expect(evaluate({ state: 'verifying', fallback })).toEqual([]);
       expect(evaluate({ fallback })).toEqual([]);
       expect(
-        evaluate({ state: 'verifying', degradedClass: 'payment', fallback }),
+        evaluate({
+          state: 'verifying',
+          degradedClass: 'payment',
+          templates: [approvedTemplate],
+          fallback,
+        }),
       ).toMatchObject([{ kind: 'payment' }]);
     },
   );
