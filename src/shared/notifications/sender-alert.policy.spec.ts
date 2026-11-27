@@ -105,6 +105,23 @@ describe('sender alerts', () => {
       ]);
     },
   );
+  it.each(['not_ready', 'template_pending'])(
+    'raises no fallback when Akeed sent because the number was %s',
+    (reason) => {
+      const fallback = { reason, at: '2026-11-04T10:00:00Z' };
+      expect(evaluate({ state: 'verifying', fallback })).toEqual([]);
+      expect(evaluate({ fallback })).toEqual([]);
+      expect(
+        evaluate({ state: 'verifying', degradedClass: 'payment', fallback }),
+      ).toMatchObject([{ kind: 'payment' }]);
+    },
+  );
+  it('still raises a fallback for a send the number could not make', () => {
+    const fallback = { reason: 'degraded:payment', at: '2026-11-04T10:00:00Z' };
+    expect(evaluate({ fallback })).toMatchObject([
+      { kind: 'fallback', reason: 'sender_unavailable' },
+    ]);
+  });
   it('closes transient fallback after a newer merchant success and respects the sending switch', () => {
     const fallback = { reason: 'outcome_unknown', at: '2026-11-04T10:00:00Z' };
     expect(evaluate({ fallback })).toMatchObject([{ kind: 'fallback' }]);
