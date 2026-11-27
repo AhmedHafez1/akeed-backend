@@ -44,6 +44,12 @@ export interface SenderAlertFacts {
   createdAt?: string | null;
 }
 
+/** Sender reasons for Akeed sending before the merchant's number can. */
+const SETUP_FALLBACK_REASONS: ReadonlySet<string> = new Set([
+  'not_ready',
+  'template_pending',
+]);
+
 /** Current facts, rather than event arrival order, decide the banners. */
 export function senderAlerts(
   facts: SenderAlertFacts,
@@ -90,7 +96,13 @@ export function senderAlerts(
       'warning',
       affected,
     );
-  const fallback = facts.fallback;
+  // Akeed sending while the number is still being set up, or while its
+  // template is in Meta's review, is expected rather than a failure of the
+  // merchant's number, so it raises no banner.
+  const fallback =
+    facts.fallback && !SETUP_FALLBACK_REASONS.has(facts.fallback.reason)
+      ? facts.fallback
+      : null;
   if (
     sendingEnabled &&
     (['credentials', 'restricted'].includes(facts.degradedClass ?? '') ||
