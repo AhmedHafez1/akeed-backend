@@ -1,4 +1,6 @@
 import type { ConfigService } from '@nestjs/config';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import {
   adminStoreLifecycles,
   integrations,
@@ -359,6 +361,26 @@ describe('IntegrationsRepository installation lifecycle', () => {
     );
 
     expect(set.mock.calls[0][0]).not.toHaveProperty('onboardingStatus');
+  });
+});
+
+describe('IntegrationsRepository public store count', () => {
+  it('counts active rows across every source type', async () => {
+    const where = jest.fn<Promise<{ count: number }[]>, [SQL<unknown>]>(() =>
+      Promise.resolve([{ count: 17 }]),
+    );
+    const from = jest.fn(() => ({ where }));
+    const select = jest.fn(() => ({ from }));
+    const repository = new IntegrationsRepository(
+      { select } as never,
+      {} as ConfigService,
+    );
+
+    await expect(repository.countActiveStores()).resolves.toBe(17);
+
+    const query = new PgDialect().sqlToQuery(where.mock.calls[0][0]);
+    expect(query.sql).toContain('"integrations"."is_active" = $1');
+    expect(query.params).toEqual([true]);
   });
 });
 
