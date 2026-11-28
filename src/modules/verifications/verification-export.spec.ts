@@ -21,6 +21,10 @@ const baseRow: VerificationExportRow = {
   createdAt: '2026-10-12T04:36:00.000Z',
   confirmedAt: '2026-10-12T04:43:00.000Z',
   canceledAt: null,
+  shippingStatus: null,
+  shippingReasonCode: null,
+  shippingReply: null,
+  shippingReplyResolvedAt: null,
 };
 
 describe('buildVerificationsCsv', () => {
@@ -28,7 +32,7 @@ describe('buildVerificationsCsv', () => {
     const csv = buildVerificationsCsv([], 'UTC');
     expect(csv.charCodeAt(0)).toBe(0xfeff);
     expect(csv.slice(1)).toBe(
-      'Order,Customer,Phone,Total,Currency,Status,Order time,Confirmed at,Canceled at,City / region,Address,Items\r\n',
+      'Order,Customer,Phone,Total,Currency,Status,Shipping,Shipping reply,Order time,Confirmed at,Canceled at,City / region,Address,Items\r\n',
     );
   });
 
@@ -37,8 +41,43 @@ describe('buildVerificationsCsv', () => {
       '\r\n',
     );
     expect(line).toBe(
-      '#22,Ahmed Hafez,+201148675077,950.00,EGP,confirmed,2026-10-12 07:36,2026-10-12 07:43,,Giza,5 Nile St,"2 x T-shirt (L, Black)"',
+      '#22,Ahmed Hafez,+201148675077,950.00,EGP,confirmed,,,2026-10-12 07:36,2026-10-12 07:43,,Giza,5 Nile St,"2 x T-shirt (L, Black)"',
     );
+  });
+
+  it('adds the Shipped message and the reply, keeping Status as the confirmation', () => {
+    const cells = (row: Partial<VerificationExportRow>) =>
+      buildVerificationsCsv([{ ...baseRow, lineItems: null, ...row }], 'UTC')
+        .split('\r\n')[1]
+        .split(',')
+        .slice(5, 8);
+
+    expect(cells({ shippingStatus: 'read', shippingReply: 'address' })).toEqual(
+      ['confirmed', 'read', 'address'],
+    );
+    expect(
+      cells({
+        shippingStatus: 'delivered',
+        shippingReply: 'reschedule',
+        shippingReplyResolvedAt: '2026-10-13T09:00:00.000Z',
+      }),
+    ).toEqual(['confirmed', 'delivered', 'reschedule (done)']);
+    expect(
+      cells({
+        shippingStatus: 'failed',
+        shippingReasonCode: 'not_on_whatsapp',
+      }),
+    ).toEqual(['confirmed', 'failed: not_on_whatsapp', '']);
+    expect(cells({ shippingStatus: 'pending' })).toEqual([
+      'confirmed',
+      'pending',
+      '',
+    ]);
+    expect(cells({ shippingStatus: 'sent', shippingReply: 'home' })).toEqual([
+      'confirmed',
+      'sent',
+      'home',
+    ]);
   });
 
   it('quotes commas, quotes and line breaks', () => {

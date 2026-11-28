@@ -1418,6 +1418,10 @@ describe('Customer track record and export', () => {
           createdAt: '2026-10-09T14:42:00.000Z',
           confirmedAt: '2026-10-09T14:50:00.000Z',
           canceledAt: null,
+          shippingStatus: 'read',
+          shippingReasonCode: null,
+          shippingReply: 'address',
+          shippingReplyResolvedAt: null,
         },
       ]),
     };
@@ -1433,7 +1437,9 @@ describe('Customer track record and export', () => {
       { tab: 'confirmed', searchDigits: '1170', importBatchId: undefined },
       5001,
     );
-    expect(csv).toContain('#1170,Russell Winfield,+201148675077,973.75,USD');
+    expect(csv).toContain(
+      '#1170,Russell Winfield,+201148675077,973.75,USD,confirmed,read,address,',
+    );
     expect(csv).toContain('2026-10-09 17:42');
   });
 

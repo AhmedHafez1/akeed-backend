@@ -10,6 +10,8 @@ const HEADERS = [
   'Total',
   'Currency',
   'Status',
+  'Shipping',
+  'Shipping reply',
   'Order time',
   'Confirmed at',
   'Canceled at',
@@ -68,6 +70,23 @@ function formatItems(row: VerificationExportRow): string {
     .join('; ');
 }
 
+/** The Shipped message's state: `failed` carries its reason code. */
+function formatShipping(row: VerificationExportRow): string {
+  if (!row.shippingStatus) return '';
+  if (row.shippingStatus !== 'failed') return row.shippingStatus;
+  return row.shippingReasonCode
+    ? `failed: ${row.shippingReasonCode}`
+    : 'failed';
+}
+
+/** The customer's reply to the Shipped message, marked once the merchant dealt with it. */
+function formatShippingReply(row: VerificationExportRow): string {
+  if (!row.shippingReply) return '';
+  return row.shippingReplyResolvedAt
+    ? `${row.shippingReply} (done)`
+    : row.shippingReply;
+}
+
 /** The confirmations export file, times in the merchant's reporting zone. */
 export function buildVerificationsCsv(
   rows: VerificationExportRow[],
@@ -81,6 +100,8 @@ export function buildVerificationsCsv(
       row.totalPrice,
       row.currency,
       row.status,
+      formatShipping(row),
+      formatShippingReply(row),
       formatLocalTime(row.createdAt, timeZone),
       formatLocalTime(row.confirmedAt, timeZone),
       formatLocalTime(row.canceledAt, timeZone),
