@@ -16,6 +16,11 @@ import {
 } from 'drizzle-orm';
 import type { OrderLineItem } from '../../../shared/interfaces/order.interface';
 import { VerificationStatus } from '../../../shared/interfaces/verification.interface';
+import type {
+  ShippingCustomerReply,
+  ShippingFailureReason,
+  ShippingNotificationStatus,
+} from '../../../shared/shipping/shipping-notification.types';
 import { DRIZZLE } from '../database.provider';
 import {
   verifications,
@@ -24,6 +29,7 @@ import {
   orderImportBatches,
   orderImportRows,
   orders,
+  verificationShippingNotifications,
   webhookEvents,
 } from '../schema';
 import {
@@ -799,44 +805,63 @@ export class VerificationsRepository {
     },
     limit: number,
   ): Promise<VerificationExportRow[]> {
-    return this.db
-      .select({
-        orderNumber: orders.orderNumber,
-        customerName: orders.customerName,
-        customerPhone: orders.customerPhone,
-        totalPrice: orders.totalPrice,
-        currency: orders.currency,
-        shippingRegion: orders.shippingRegion,
-        shippingAddress: orders.shippingAddress,
-        lineItems: orders.lineItems,
-        status: verifications.status,
-        createdAt: verifications.createdAt,
-        confirmedAt: verifications.confirmedAt,
-        canceledAt: verifications.canceledAt,
-      })
-      .from(verifications)
-      .innerJoin(
-        orders,
-        and(
-          eq(orders.id, verifications.orderId),
-          eq(orders.orgId, verifications.orgId),
-        ),
-      )
-      .where(
-        and(
-          ...this.buildOrgListConditions(
-            orgId,
-            undefined,
-            period,
-            refinement.importBatchId,
-            refinement,
+    return (
+      this.db
+        .select({
+          orderNumber: orders.orderNumber,
+          customerName: orders.customerName,
+          customerPhone: orders.customerPhone,
+          totalPrice: orders.totalPrice,
+          currency: orders.currency,
+          shippingRegion: orders.shippingRegion,
+          shippingAddress: orders.shippingAddress,
+          lineItems: orders.lineItems,
+          status: verifications.status,
+          createdAt: verifications.createdAt,
+          confirmedAt: verifications.confirmedAt,
+          canceledAt: verifications.canceledAt,
+          shippingStatus: verificationShippingNotifications.status,
+          shippingReasonCode: verificationShippingNotifications.reasonCode,
+          shippingReply: verificationShippingNotifications.customerReply,
+          shippingReplyResolvedAt:
+            verificationShippingNotifications.needsActionResolvedAt,
+        })
+        .from(verifications)
+        .innerJoin(
+          orders,
+          and(
+            eq(orders.id, verifications.orderId),
+            eq(orders.orgId, verifications.orgId),
           ),
-          eq(orders.isTest, false),
-          sql`${orders.externalOrderId} NOT LIKE 'akeed-test-%'`,
-        ),
-      )
-      .orderBy(desc(verifications.createdAt), desc(verifications.id))
-      .limit(limit);
+        )
+        // At most one row: the record is unique per verification and stage.
+        .leftJoin(
+          verificationShippingNotifications,
+          and(
+            eq(
+              verificationShippingNotifications.verificationId,
+              verifications.id,
+            ),
+            eq(verificationShippingNotifications.orgId, verifications.orgId),
+            eq(verificationShippingNotifications.stage, 'shipped'),
+          ),
+        )
+        .where(
+          and(
+            ...this.buildOrgListConditions(
+              orgId,
+              undefined,
+              period,
+              refinement.importBatchId,
+              refinement,
+            ),
+            eq(orders.isTest, false),
+            sql`${orders.externalOrderId} NOT LIKE 'akeed-test-%'`,
+          ),
+        )
+        .orderBy(desc(verifications.createdAt), desc(verifications.id))
+        .limit(limit)
+    );
   }
 
   /**
@@ -1623,6 +1648,11 @@ export interface VerificationExportRow {
   createdAt: string | null;
   confirmedAt: string | null;
   canceledAt: string | null;
+  /** The Shipped message, when the order has one. */
+  shippingStatus: ShippingNotificationStatus | null;
+  shippingReasonCode: ShippingFailureReason | null;
+  shippingReply: ShippingCustomerReply | null;
+  shippingReplyResolvedAt: string | null;
 }
 
 /** A row of the dashboard's needs-action card. */

@@ -202,6 +202,8 @@ beforeAll(async () => {
     tables.customerMessages,
     tables.metaWebhookEvents,
     tables.whatsappConnections,
+    // Joined by the export for the Shipping columns.
+    tables.verificationShippingNotifications,
   ])
     await scaffold(table);
   await client.unsafe(
@@ -780,6 +782,56 @@ describe('confirmations export', () => {
     const otherShop = await service.exportByOrg(orgB, {});
     expect(otherShop).toContain('777.00');
     expect(otherShop).not.toContain('1132');
+  });
+
+  it('adds the Shipped message and reply from the same shop only', async () => {
+    await db.insert(tables.verificationShippingNotifications).values([
+      {
+        orgId: orgA,
+        verificationId: ids.confirmed,
+        stage: 'shipped',
+        trigger: 'tag',
+        status: 'read',
+        customerReply: 'address',
+        customerRepliedAt: ago(HOUR),
+        needsActionResolvedAt: ago(HOUR / 2),
+      },
+      // A row carrying another shop's id is never joined.
+      {
+        orgId: orgB,
+        verificationId: ids.confirmedManually,
+        stage: 'shipped',
+        trigger: 'tag',
+        status: 'failed',
+        reasonCode: 'send_failed',
+      },
+    ]);
+    try {
+      const rows = await repository.findForExport(
+        orgA,
+        period(),
+        { tab: 'confirmed' },
+        10,
+      );
+      const byOrder = new Map(rows.map((row) => [row.orderNumber, row]));
+      expect(byOrder.get('1132')).toMatchObject({
+        status: 'confirmed',
+        shippingStatus: 'read',
+        shippingReasonCode: null,
+        shippingReply: 'address',
+      });
+      expect(byOrder.get('1132')?.shippingReplyResolvedAt).not.toBeNull();
+      expect(byOrder.get('1133')).toMatchObject({
+        shippingStatus: null,
+        shippingReply: null,
+      });
+
+      const csv = await service.exportByOrg(orgA, { tab: 'confirmed' });
+      expect(csv).toContain(',confirmed,read,address (done),');
+      expect(csv).not.toContain('send_failed');
+    } finally {
+      await db.delete(tables.verificationShippingNotifications);
+    }
   });
 });
 
