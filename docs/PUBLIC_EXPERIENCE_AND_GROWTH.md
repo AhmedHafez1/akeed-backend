@@ -97,14 +97,14 @@ Copy lives in the `hero` namespace of every locale file.
 - **Headline:** "Confirm COD orders before you ship." / "أكّد طلبات الدفع عند الاستلام قبل ما تشحن."
 - **Primary CTA:** "Get started free" / "ابدأ مجانًا". The secondary CTA is "Install on Shopify".
 - **Phone mockup:** the registered standard confirmation template of the page's language (`hero.mockup.*`) with synthetic order data, drawn with the same `WhatsAppPhonePreview` as the settings preview. Shown on mobile too.
-- **Confirmed-orders counter:** the real total from `GET /api/public/stats` (below), placed before the logos. Hidden when the backend cannot answer; never a fallback number.
+- **Live totals card:** connected stores and confirmed orders from `GET /api/public/stats` (below), placed before the logos. Stores sit on the start side, or on top on phones. The card is hidden when the backend cannot answer, and the store number alone when only the store count is missing; never a fallback number.
 - **Microcopy:** free messages (`CREDIT_FREE_MESSAGES`), no credit card, official WhatsApp Business Platform.
 
 Do not add waitlist counters, limited-offer banners or other numbers without a verified source.
 
-### Confirmed-orders counter (`GET /api/public/stats`)
+### Live totals (`GET /api/public/stats`)
 
-Unauthenticated, `PublicStatsModule`. Answers `{ confirmed_orders_total, as_of }` with `Cache-Control: public, max-age=300`; the service caches the value in memory for 5 minutes and the homepage revalidates its fetch every 10 minutes.
+Unauthenticated, `PublicStatsModule`. Answers `{ confirmed_orders_total, active_stores_total, as_of }` with `Cache-Control: public, max-age=300`; the service caches the value in memory for 5 minutes and the homepage revalidates its fetch every 10 minutes.
 
 `VerificationsRepository.countCustomerConfirmedProductionOrders` counts `DISTINCT verifications.order_id` where:
 
@@ -112,6 +112,8 @@ Unauthenticated, `PublicStatsModule`. Answers `{ confirmed_orders_total, as_of }
 - the order is real: `orders.is_test = false` and the external id does not start with `akeed-test-`.
 
 Orders are unique per `(integration_id, external_order_id)`, so webhook retries, repeated reply events and reconfirmation cycles collapse into one order. Sends and merchant confirmations never count. An order the customer confirmed and that was canceled later still counts. The answer carries no tenant or customer data.
+
+`IntegrationsRepository.countActiveStores` counts `integrations` rows with `is_active = true`, for every platform, standalone included. An organization has at most one active row, so each is counted once. A store counts from the moment it is connected, whether or not it has sent a message. If this count fails, `active_stores_total` is `null` and the orders total is still answered.
 
 ### How It Works
 

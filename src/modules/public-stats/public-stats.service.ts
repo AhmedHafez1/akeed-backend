@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { VerificationsRepository } from '../../infrastructure/database/repositories/verifications.repository';
+import { IntegrationsRepository } from '../../infrastructure/database/repositories/integrations.repository';
 import {
   buildBackendLog,
   normalizeError,
@@ -15,7 +16,10 @@ export class PublicStatsService {
   private cached: { value: PublicStatsDto; expiresAt: number } | null = null;
   private inFlight: Promise<PublicStatsDto> | null = null;
 
-  constructor(private readonly verifications: VerificationsRepository) {}
+  constructor(
+    private readonly verifications: VerificationsRepository,
+    private readonly integrations: IntegrationsRepository,
+  ) {}
 
   async getStats(now: number = Date.now()): Promise<PublicStatsDto> {
     if (this.cached && this.cached.expiresAt > now) return this.cached.value;
@@ -29,10 +33,22 @@ export class PublicStatsService {
   private async load(now: number): Promise<PublicStatsDto> {
     const startedAt = Date.now();
     try {
-      const total =
-        await this.verifications.countCustomerConfirmedProductionOrders();
+      const [total, activeStores] = await Promise.all([
+        this.verifications.countCustomerConfirmedProductionOrders(),
+        this.integrations.countActiveStores().catch((error: unknown) => {
+          this.logger.warn(
+            buildBackendLog(PublicStatsService.name, {
+              action: 'public_stats_store_count',
+              outcome: 'failure',
+              ...normalizeError(error),
+            }),
+          );
+          return null;
+        }),
+      ]);
       const value: PublicStatsDto = {
         confirmed_orders_total: total,
+        active_stores_total: activeStores,
         as_of: new Date(now).toISOString(),
       };
       this.cached = { value, expiresAt: now + PUBLIC_STATS_CACHE_TTL_MS };
@@ -42,6 +58,7 @@ export class PublicStatsService {
           outcome: 'success',
           durationMs: Date.now() - startedAt,
           confirmedOrdersTotal: total,
+          activeStoresTotal: activeStores,
         }),
       );
       return value;

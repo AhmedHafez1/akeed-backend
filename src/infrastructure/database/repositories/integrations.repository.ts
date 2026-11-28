@@ -3,7 +3,17 @@ import { ConfigService } from '@nestjs/config';
 import { acknowledgmentPreferenceUpdates } from '../../../shared/messaging/acknowledgment-preference';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type * as schema from '../schema';
-import { eq, and, asc, desc, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  isNotNull,
+  isNull,
+  lte,
+  sql,
+} from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import {
   adminAccessAudit,
@@ -24,6 +34,15 @@ type Transaction = Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
 
 @Injectable()
 export class IntegrationsRepository {
+  /** One active Akeed source per organization, including standalone sources. */
+  async countActiveStores(): Promise<number> {
+    const [row] = await this.db
+      .select({ count: count() })
+      .from(integrations)
+      .where(eq(integrations.isActive, true));
+    return row?.count ?? 0;
+  }
+
   async updateAcknowledgmentPreference(
     orgId: string,
     integrationId: string,
